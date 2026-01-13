@@ -1,12 +1,13 @@
 [package]
-name = "v8"
-version = "142.2.0"
-description = "Rust bindings to V8"
+name = "openworkers-v8"
+version = "142.2.2"
+description = "Rust bindings to V8 (fork with Locker/UnenteredIsolate support for isolate pooling)"
 readme = "README.md"
-authors = ["the Deno authors"]
+authors = ["the Deno authors", "max-lt <contact@openworkers.dev>"]
 license = "MIT"
 edition = "2024"
-repository = "https://github.com/denoland/rusty_v8"
+repository = "https://github.com/max-lt/rusty_v8"
+
 exclude = [
   # To keep the package under the 10mb limit imposed by crates.io we exclude
   # a lot of files that are not needed for the build.
@@ -92,6 +93,9 @@ exclude = [
   "!v8/tools/testrunner/utils/dump_build_config.py",
 ]
 
+[lib]
+name = "v8"
+
 [profile.dev]
 # rusty_v8 may miscompile at opt-level=0.
 # https://github.com/rust-lang/rust/issues/87215
@@ -150,4 +154,5 @@ path = "benches/function.rs"
 harness = false
 
 [workspace]
-members = ["examples/android"]
+# Android example removed (depends on "v8" name)
+members = []

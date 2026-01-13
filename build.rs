@@ -314,6 +314,14 @@ fn build_v8(is_asan: bool) {
     gn_args.push("host_cpu=\"arm64\"".to_string());
   }
 
+  // On native ARM64 Linux, use system Rust toolchain (Chromium doesn't provide prebuilt)
+  if is_native_arm64_linux() {
+    let sysroot = get_system_rust_sysroot();
+    println!("cargo:warning=Using system Rust sysroot: {}", sysroot);
+    gn_args.push(format!("rust_sysroot_absolute=\"{}\"", sysroot));
+    gn_args.push("host_cpu=\"arm64\"".to_string());
+  }
+
   if env::var_os("DISABLE_CLANG").is_some() {
     gn_args.push("is_clang=false".into());
     // -gline-tables-only is Clang-only
@@ -505,7 +513,28 @@ fn download_ninja_gn_binaries() {
   }
 }
 
+fn is_native_arm64_linux() -> bool {
+  cfg!(target_os = "linux") && cfg!(target_arch = "aarch64")
+}
+
+fn get_system_rust_sysroot() -> String {
+  let output = Command::new("rustc")
+    .args(["--print", "sysroot"])
+    .output()
+    .expect("Failed to get rustc sysroot");
+  String::from_utf8(output.stdout).unwrap().trim().to_string()
+}
+
 fn download_rust_toolchain() {
+  // On native ARM64 Linux, Chromium doesn't provide a prebuilt Rust toolchain
+  // We'll use the system Rust toolchain instead via rust_sysroot_absolute GN arg
+  if is_native_arm64_linux() {
+    println!(
+      "cargo:warning=Native ARM64 Linux detected, using system Rust toolchain"
+    );
+    return;
+  }
+
   assert!(
     Command::new(python())
       .arg("./tools/rust_toolchain.py")
@@ -550,7 +579,7 @@ fn static_lib_url() -> String {
   if let Ok(custom_archive) = env::var("RUSTY_V8_ARCHIVE") {
     return custom_archive;
   }
-  let default_base = "https://github.com/denoland/rusty_v8/releases/download";
+  let default_base = "https://github.com/max-lt/rusty_v8/releases/download";
   let base =
     env::var("RUSTY_V8_MIRROR").unwrap_or_else(|_| default_base.into());
   let version = env::var("CARGO_PKG_VERSION").unwrap();
@@ -821,9 +850,17 @@ fn print_prebuilt_src_binding_path() {
   let features = prebuilt_features_suffix();
   let name = format!("src_binding{features}_{profile}_{target}.rs");
 
-  let src_binding_path = get_dirs().root.join("gen").join(name.clone());
+  // Use OUT_DIR to avoid modifying source directory during cargo publish verification
+  let out_dir = env::var("OUT_DIR")
+    .map(PathBuf::from)
+    .unwrap_or_else(|_| get_dirs().root.join("gen"));
+  let src_binding_path = out_dir.join(name.clone());
 
-  if let Ok(base) = env::var("RUSTY_V8_MIRROR") {
+  if !src_binding_path.exists() {
+    fs::create_dir_all(&out_dir).unwrap();
+    let default_base = "https://github.com/max-lt/rusty_v8/releases/download";
+    let base =
+      env::var("RUSTY_V8_MIRROR").unwrap_or_else(|_| default_base.into());
     let version = env::var("CARGO_PKG_VERSION").unwrap();
     let url = format!("{base}/v{version}/{name}");
     download_file(&url, &src_binding_path);
