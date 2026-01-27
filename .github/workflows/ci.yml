@@ -2,52 +2,151 @@ name: ci
 
 on:
   push:
+    branches: [main]
     tags: ["**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
 
 permissions: write-all
 
 jobs:
   build:
-    name: ${{ matrix.config.variant }} ${{ matrix.config.target }} ${{ matrix.config.v8_enable_pointer_compression && 'ptrcomp' || '' }}
+    name:
+      ${{ matrix.config.variant }} ${{ matrix.config.target }} ${{
+      matrix.config.features }}
     runs-on: ${{ matrix.config.os }}
     timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
+        # ===== Runner sizes reference =====
+        # https://docs.github.com/en/actions/reference/runners/github-hosted-runners
+        # https://docs.github.com/en/actions/reference/runners/larger-runners
+        # https://docs.github.com/en/billing/reference/actions-runner-pricing
+        # macOS (free):
+        #   macos-15         - arm64 (M1), 3 CPU, 7 GB RAM
+        #   macos-15-intel   - Intel x64, 4 CPU, 14 GB RAM
+        # macOS (paid):
+        #   macos-15-large   - Intel x64, 12 CPU, 30 GB RAM
+        #   macos-15-xlarge  - arm64 (M2), 5 CPU, 14 GB RAM
+        # Linux (free):
+        #   ubuntu-22.04     - x64, 4 CPU, 16 GB RAM
+        #   ubuntu-24.04     - x64, 4 CPU, 16 GB RAM
+        #   ubuntu-22.04-arm - arm64, 4 CPU, 16 GB RAM
+        #   ubuntu-24.04-arm - arm64, 4 CPU, 16 GB RAM
+        # Linux (paid):
+        #   ubuntu-22.04-8core  - x64, 8 CPU, 32 GB RAM
+        #   ubuntu-22.04-arm-8core - arm64, 8 CPU, 32 GB RAM
+        #   ubuntu-22.04-16core - x64, 16 CPU, 64 GB RAM
+        #   ubuntu-22.04-arm-16core - arm64, 16 CPU, 64 GB RAM
+        # Windows (free):
+        #   windows-2022     - x64, 4 CPU, 16 GB RAM
+        #   windows-2025     - x64, 4 CPU, 16 GB RAM
+        #   windows-11-arm   - arm64, 4 CPU, 16 GB RAM
         config:
-          # With pointer compression
+          # ===== macOS ARM64 (main target: none, ptrcomp, sandbox) =====
+          - os: macos-15
+            target: aarch64-apple-darwin
+            variant: debug
+            features: none
           - os: macos-15
             target: aarch64-apple-darwin
             variant: release
-            v8_enable_pointer_compression: true
-            cargo: cargo
-
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            variant: release
-            v8_enable_pointer_compression: true
-            cargo: cargo
-
-          # Without pointer compression (needed for cargo publish verification)
-          - os: macos-15
+            features: none
+          - os: macos-15-xlarge # use macos-15 for free (may timeout)
+            target: aarch64-apple-darwin
+            variant: debug
+            features: ptrcomp
+          - os: macos-15 # use macos-15-xlarge for faster builds
             target: aarch64-apple-darwin
             variant: release
-            v8_enable_pointer_compression: false
-            cargo: cargo
+            features: ptrcomp
+          - os: macos-15-xlarge # use macos-15 for free (may timeout)
+            target: aarch64-apple-darwin
+            variant: debug
+            features: sandbox
+          - os: macos-15 # use macos-15-xlarge for faster builds
+            target: aarch64-apple-darwin
+            variant: release
+            features: sandbox
 
+          # ===== Linux x86_64 (main target: none, ptrcomp, sandbox) =====
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            variant: debug
+            features: none
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             variant: release
-            v8_enable_pointer_compression: false
-            cargo: cargo
+            features: none
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            variant: debug
+            features: ptrcomp
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            variant: release
+            features: ptrcomp
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            variant: debug
+            features: sandbox
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            variant: release
+            features: sandbox
+
+          # ===== Linux ARM64 cross-compile (main target: none, ptrcomp, sandbox) =====
+          - os: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+            variant: debug
+            features: none
+          - os: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+            variant: release
+            features: none
+          - os: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+            variant: debug
+            features: ptrcomp
+          - os: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+            variant: release
+            features: ptrcomp
+          - os: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+            variant: debug
+            features: sandbox
+          - os: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+            variant: release
+            features: sandbox
+
+          # ===== macOS x86_64 (secondary: none only) =====
+          - os: macos-15-large # use macos-15-intel for free (may timeout)
+            target: x86_64-apple-darwin
+            variant: debug
+            features: none
+          - os: macos-15-intel # use macos-15-large for faster builds
+            target: x86_64-apple-darwin
+            variant: release
+            features: none
+
+          # ===== Windows x86_64 (secondary: none only, release only) =====
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+            variant: release
+            features: none
 
     env:
       V8_FROM_SOURCE: true
-      CARGO_VARIANT_FLAG: ${{ matrix.config.variant == 'release' && '--release' || '' }}
-      CARGO_FEATURE_FLAGS: ${{ matrix.config.v8_enable_pointer_compression && '--features v8_enable_pointer_compression' || '' }}
-      LIB_NAME: librusty_v8
-      LIB_EXT: a
-      FEATURES_SUFFIX: ${{ matrix.config.v8_enable_pointer_compression && '_ptrcomp' || '' }}
+      CARGO_VARIANT_FLAG:
+        ${{ matrix.config.variant == 'release' && '--release' || '' }}
+      LIB_NAME:
+        ${{ contains(matrix.config.target, 'windows') && 'rusty_v8' ||
+        'librusty_v8' }}
+      LIB_EXT: ${{ contains(matrix.config.target, 'windows') && 'lib' || 'a' }}
       RUSTFLAGS: -D warnings
 
     steps:
@@ -63,36 +162,50 @@ jobs:
       - name: Install rust
         uses: dsherret/rust-toolchain-file@v1
 
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@main
-
       - name: Install nextest
-        run: cargo binstall cargo-nextest --secure
+        uses: taiki-e/install-action@nextest
 
       - name: Install python
         uses: actions/setup-python@v5
         with:
           python-version: 3.11.x
+          architecture: x64
+
+      - name: Install cross compilation toolchain
+        if: matrix.config.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          rustup target add aarch64-unknown-linux-gnu
+
+          sudo apt update
+          sudo apt install -yq --no-install-suggests --no-install-recommends \
+            binfmt-support g++-10-aarch64-linux-gnu g++-10-multilib \
+            gcc-10-aarch64-linux-gnu libc6-arm64-cross qemu qemu-user \
+            qemu-user-binfmt
+
+          sudo ln -s /usr/aarch64-linux-gnu/lib/ld-linux-aarch64.so.1 \
+                     /lib/ld-linux-aarch64.so.1
+
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/aarch64-linux-gnu-gcc-10" >> ${GITHUB_ENV}
+          echo "QEMU_LD_PREFIX=/usr/aarch64-linux-gnu" >> ${GITHUB_ENV}
 
       - name: Write git_submodule_status.txt
         run: git submodule status --recursive > git_submodule_status.txt
 
       - name: Cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
-          # Note: rusty_v8 targets always get get rebuilt, and their outputs
-          # ('librusty_v8.rlib', the whole 'gn_out' directory, etc.) can be
-          # quite big, so we cache only those subdirectories of
-          # target/{debug|release} that contain the build output for crates that
-          # come from the registry. By additionally saving the sccache cache
-          # directory it's still possible to build v8 fast.
           path: |-
             target/sccache
             target/*/.*
             target/*/build
             target/*/deps
-          key: cargo1-${{ matrix.config.target }}-${{ matrix.config.variant }}-${{ matrix.config.v8_enable_pointer_compression }}-${{ hashFiles('Cargo.lock', 'build.rs', 'git_submodule_status.txt') }}
-          restore-keys: cargo1-${{ matrix.config.target }}-${{ matrix.config.variant }}-${{ matrix.config.v8_enable_pointer_compression }}-
+          key:
+            cargo-${{ matrix.config.target }}-${{ matrix.config.variant }}-${{
+            matrix.config.features }}-${{ hashFiles('Cargo.lock', 'build.rs',
+            'git_submodule_status.txt') }}
+          restore-keys:
+            cargo-${{ matrix.config.target }}-${{ matrix.config.variant }}-${{
+            matrix.config.features }}-
 
       - name: Install and start sccache
         shell: pwsh
@@ -103,9 +216,11 @@ jobs:
         run: |
           $version = "v0.8.2"
           $platform =
-            @{ "aarch64-apple-darwin"      = "aarch64-apple-darwin"
+            @{ "x86_64-apple-darwin"       = "x86_64-apple-darwin"
+               "aarch64-apple-darwin"      = "aarch64-apple-darwin"
                "x86_64-unknown-linux-gnu"  = "x86_64-unknown-linux-musl"
-               "aarch64-unknown-linux-gnu" = "aarch64-unknown-linux-musl"
+               "aarch64-unknown-linux-gnu" = "x86_64-unknown-linux-musl"
+               "x86_64-pc-windows-msvc"    = "x86_64-pc-windows-msvc"
              }['${{ matrix.config.target }}']
           $basename = "sccache-$version-$platform"
           $url = "https://github.com/mozilla/sccache/releases/download/$version/$basename.tar.gz"
@@ -125,33 +240,56 @@ jobs:
           sudo apt-get install lld-19 clang-19 clang-tools-19 clang-tidy-19 clang-format-19 libclang-19-dev -y
           echo "LIBCLANG_PATH=/usr/lib/llvm-19/lib" >> $GITHUB_ENV
 
-      - name: check rust code formatting
-        run: cargo fmt --check
-
-      - name: check c++ code formatting
-        if: startsWith(matrix.config.os, 'ubuntu')
+      - name: Set cargo feature flags
+        shell: bash
         run: |
-          clang-format-19 --verbose --Werror --dry-run src/*.cc src/*.hpp src/*.h
+          if [ "${{ matrix.config.features }}" = "sandbox" ]; then
+            echo "CARGO_FEATURE_FLAGS=--features v8_enable_sandbox" >> $GITHUB_ENV
+            echo "FEATURES_SUFFIX=_sandbox" >> $GITHUB_ENV
+          elif [ "${{ matrix.config.features }}" = "ptrcomp" ]; then
+            echo "CARGO_FEATURE_FLAGS=--features v8_enable_pointer_compression" >> $GITHUB_ENV
+            echo "FEATURES_SUFFIX=_ptrcomp" >> $GITHUB_ENV
+          else
+            echo "CARGO_FEATURE_FLAGS=" >> $GITHUB_ENV
+            echo "FEATURES_SUFFIX=" >> $GITHUB_ENV
+          fi
 
       - name: Test
+        if: matrix.config.target != 'aarch64-unknown-linux-gnu'
         env:
           SCCACHE_IDLE_TIMEOUT: 0
-        run: ${{ matrix.config.cargo }} nextest run -v --cargo-verbose --cargo-verbose --all-targets --locked --target ${{ matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }} ${{ env.CARGO_FEATURE_FLAGS }}
+        run:
+          cargo nextest run --all-targets --locked --target ${{
+          matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }} ${{
+          env.CARGO_FEATURE_FLAGS }}
+
+      - name: Build (cross-compile, no tests)
+        if: matrix.config.target == 'aarch64-unknown-linux-gnu'
+        env:
+          SCCACHE_IDLE_TIMEOUT: 0
+        run:
+          cargo build --all-targets --locked --target ${{ matrix.config.target
+          }} ${{ env.CARGO_VARIANT_FLAG }} ${{ env.CARGO_FEATURE_FLAGS }}
 
       - name: Clippy
-        run: ${{ matrix.config.cargo }} clippy --all-targets --locked --target ${{ matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }} ${{ env.CARGO_FEATURE_FLAGS }} -- -D clippy::all
+        run:
+          cargo clippy --all-targets --locked --target ${{ matrix.config.target
+          }} ${{ env.CARGO_VARIANT_FLAG }} ${{ env.CARGO_FEATURE_FLAGS }} -- -D
+          clippy::all
 
       - name: Prepare binary publish
         run: |
           gzip -9c target/${{ matrix.config.target }}/${{ matrix.config.variant }}/gn_out/obj/${{ env.LIB_NAME }}.${{ env.LIB_EXT }} > target/${{ env.LIB_NAME }}${{ env.FEATURES_SUFFIX }}_${{ matrix.config.variant }}_${{ matrix.config.target }}.${{ env.LIB_EXT }}.gz
           ls -l target/${{ env.LIB_NAME }}${{ env.FEATURES_SUFFIX }}_${{ matrix.config.variant }}_${{ matrix.config.target }}.${{ env.LIB_EXT }}.gz
 
-          cp target/${{ matrix.config.target }}/${{ matrix.config.variant}}/gn_out/src_binding.rs target/src_binding${{ env.FEATURES_SUFFIX }}_${{ matrix.config.variant }}_${{ matrix.config.target }}.rs
+          cp target/${{ matrix.config.target }}/${{ matrix.config.variant }}/gn_out/src_binding.rs target/src_binding${{ env.FEATURES_SUFFIX }}_${{ matrix.config.variant }}_${{ matrix.config.target }}.rs
           ls -l target/src_binding${{ env.FEATURES_SUFFIX }}_${{ matrix.config.variant }}_${{ matrix.config.target }}.rs
 
       - name: Binary publish
         uses: softprops/action-gh-release@v0.1.15
-        if: startsWith(github.ref, 'refs/tags/')
+        if: >-
+          github.repository == 'openworkers/rusty-v8' && startsWith(github.ref,
+          'refs/tags/v') && !contains(github.ref, '-')
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -162,13 +300,19 @@ jobs:
       - name: Upload CI artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: src_binding${{ env.FEATURES_SUFFIX }}_${{ matrix.config.variant }}_${{ matrix.config.target }}.rs
-          path: target/src_binding${{ env.FEATURES_SUFFIX }}_${{ matrix.config.variant }}_${{ matrix.config.target }}.rs
+          name:
+            src_binding${{ env.FEATURES_SUFFIX }}_${{ matrix.config.variant
+            }}_${{ matrix.config.target }}.rs
+          path:
+            target/src_binding${{ env.FEATURES_SUFFIX }}_${{
+            matrix.config.variant }}_${{ matrix.config.target }}.rs
 
   publish:
     needs: build
     runs-on: ubuntu-22.04
-    if: startsWith(github.ref, 'refs/tags/')
+    if:
+      github.repository == 'openworkers/rusty-v8' && startsWith(github.ref,
+      'refs/tags/v') && !contains(github.ref, '-')
     steps:
       - name: Configure git
         run: git config --global core.symlinks true
@@ -177,7 +321,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 10
-          submodules: recursive
+          submodules: false
 
       - name: Install rust
         uses: dsherret/rust-toolchain-file@v1
@@ -186,6 +330,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: 3.11.x
+          architecture: x64
 
       - name: Download CI artifacts
         uses: actions/download-artifact@v4

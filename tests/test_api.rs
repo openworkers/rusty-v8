@@ -11549,7 +11549,10 @@ fn gc_callbacks() {
   }
 }
 
+// V8 sandbox mode doesn't support fast API calls with external pointer parameters
+// for pointer types. See: https://v8.dev/blog/sandbox
 #[test]
+#[cfg(not(feature = "v8_enable_sandbox"))]
 fn test_fast_calls_pointer() {
   static WHO: AtomicUsize = AtomicUsize::new(0);
 

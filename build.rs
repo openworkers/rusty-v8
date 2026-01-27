@@ -579,7 +579,7 @@ fn static_lib_url() -> String {
   if let Ok(custom_archive) = env::var("RUSTY_V8_ARCHIVE") {
     return custom_archive;
   }
-  let default_base = "https://github.com/max-lt/rusty_v8/releases/download";
+  let default_base = "https://github.com/openworkers/rusty-v8/releases/download";
   let base =
     env::var("RUSTY_V8_MIRROR").unwrap_or_else(|_| default_base.into());
   let version = env::var("CARGO_PKG_VERSION").unwrap();
@@ -828,6 +828,13 @@ fn print_link_flags() {
     println!("cargo:rustc-link-lib=dylib=dbghelp");
   }
 
+  // macOS + sandbox requires CoreFoundation and Security for partition_alloc's UseMapJit()
+  if target_os == "macos" && env::var("CARGO_FEATURE_V8_ENABLE_SANDBOX").is_ok()
+  {
+    println!("cargo:rustc-link-lib=framework=CoreFoundation");
+    println!("cargo:rustc-link-lib=framework=Security");
+  }
+
   if target_env == "msvc" {
     // On Windows, including libcpmt[d]/msvcprt[d] explicitly links the C++
     // standard library, which libc++ needs for exception_ptr internals.
@@ -858,7 +865,7 @@ fn print_prebuilt_src_binding_path() {
 
   if !src_binding_path.exists() {
     fs::create_dir_all(&out_dir).unwrap();
-    let default_base = "https://github.com/max-lt/rusty_v8/releases/download";
+    let default_base = "https://github.com/openworkers/rusty-v8/releases/download";
     let base =
       env::var("RUSTY_V8_MIRROR").unwrap_or_else(|_| default_base.into());
     let version = env::var("CARGO_PKG_VERSION").unwrap();
