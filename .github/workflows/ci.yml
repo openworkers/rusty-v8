@@ -88,7 +88,7 @@ jobs:
           #   target: x86_64-unknown-linux-gnu
           #   variant: release
           #   features: ptrcomp
-          - os: ubuntu-22.04-8core # larger runner for flaky concurrent test
+          - os: ubuntu-22.04 # test if #[serial] fixes the flaky test
             target: x86_64-unknown-linux-gnu
             variant: debug
             features: sandbox
