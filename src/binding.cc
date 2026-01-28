@@ -447,6 +447,26 @@ void v8__ResourceConstraints__ConfigureDefaults(
   constraints->ConfigureDefaults(physical_memory, virtual_memory_limit);
 }
 
+void v8__ResourceConstraints__set_max_old_generation_size_in_bytes(
+    v8::ResourceConstraints* constraints, size_t limit) {
+  constraints->set_max_old_generation_size_in_bytes(limit);
+}
+
+void v8__ResourceConstraints__set_max_young_generation_size_in_bytes(
+    v8::ResourceConstraints* constraints, size_t limit) {
+  constraints->set_max_young_generation_size_in_bytes(limit);
+}
+
+void v8__ResourceConstraints__set_initial_old_generation_size_in_bytes(
+    v8::ResourceConstraints* constraints, size_t size) {
+  constraints->set_initial_old_generation_size_in_bytes(size);
+}
+
+void v8__ResourceConstraints__set_initial_young_generation_size_in_bytes(
+    v8::ResourceConstraints* constraints, size_t size) {
+  constraints->set_initial_young_generation_size_in_bytes(size);
+}
+
 void v8__HandleScope__CONSTRUCT(uninit_t<v8::HandleScope>* buf,
                                 v8::Isolate* isolate) {
   construct_in_place<v8::HandleScope>(buf, isolate);

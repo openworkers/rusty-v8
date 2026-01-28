@@ -173,6 +173,48 @@ impl CreateParams {
     self
   }
 
+  /// Sets the maximum size of the old generation heap in bytes.
+  ///
+  /// The old generation is where long-lived objects are stored after
+  /// surviving garbage collection in the young generation.
+  pub fn max_old_generation_size(mut self, limit: usize) -> Self {
+    self
+      .raw
+      .constraints
+      .set_max_old_generation_size_in_bytes(limit);
+    self
+  }
+
+  /// Sets the maximum size of the young generation heap in bytes.
+  ///
+  /// The young generation is where newly allocated objects are placed.
+  /// Most short-lived objects never leave the young generation.
+  pub fn max_young_generation_size(mut self, limit: usize) -> Self {
+    self
+      .raw
+      .constraints
+      .set_max_young_generation_size_in_bytes(limit);
+    self
+  }
+
+  /// Sets the initial size of the old generation heap in bytes.
+  pub fn initial_old_generation_size(mut self, size: usize) -> Self {
+    self
+      .raw
+      .constraints
+      .set_initial_old_generation_size_in_bytes(size);
+    self
+  }
+
+  /// Sets the initial size of the young generation heap in bytes.
+  pub fn initial_young_generation_size(mut self, size: usize) -> Self {
+    self
+      .raw
+      .constraints
+      .set_initial_young_generation_size_in_bytes(size);
+    self
+  }
+
   /// A CppHeap used to construct the Isolate. V8 takes ownership of the
   /// CppHeap passed this way.
   pub fn cpp_heap(mut self, heap: UniqueRef<Heap>) -> Self {
@@ -267,6 +309,22 @@ pub(crate) mod raw {
       physical_memory: u64,
       virtual_memory_limit: u64,
     );
+    fn v8__ResourceConstraints__set_max_old_generation_size_in_bytes(
+      constraints: *mut ResourceConstraints,
+      limit: usize,
+    );
+    fn v8__ResourceConstraints__set_max_young_generation_size_in_bytes(
+      constraints: *mut ResourceConstraints,
+      limit: usize,
+    );
+    fn v8__ResourceConstraints__set_initial_old_generation_size_in_bytes(
+      constraints: *mut ResourceConstraints,
+      size: usize,
+    );
+    fn v8__ResourceConstraints__set_initial_young_generation_size_in_bytes(
+      constraints: *mut ResourceConstraints,
+      size: usize,
+    );
   }
 
   impl ResourceConstraints {
@@ -294,6 +352,44 @@ pub(crate) mod raw {
           self,
           physical_memory,
           virtual_memory_limit,
+        );
+      }
+    }
+
+    /// Sets the maximum size of the old generation heap.
+    /// This is the main heap where long-lived objects are stored.
+    pub fn set_max_old_generation_size_in_bytes(&mut self, limit: usize) {
+      unsafe {
+        v8__ResourceConstraints__set_max_old_generation_size_in_bytes(
+          self, limit,
+        );
+      }
+    }
+
+    /// Sets the maximum size of the young generation heap.
+    /// This is where newly allocated objects are placed.
+    pub fn set_max_young_generation_size_in_bytes(&mut self, limit: usize) {
+      unsafe {
+        v8__ResourceConstraints__set_max_young_generation_size_in_bytes(
+          self, limit,
+        );
+      }
+    }
+
+    /// Sets the initial size of the old generation heap.
+    pub fn set_initial_old_generation_size_in_bytes(&mut self, size: usize) {
+      unsafe {
+        v8__ResourceConstraints__set_initial_old_generation_size_in_bytes(
+          self, size,
+        );
+      }
+    }
+
+    /// Sets the initial size of the young generation heap.
+    pub fn set_initial_young_generation_size_in_bytes(&mut self, size: usize) {
+      unsafe {
+        v8__ResourceConstraints__set_initial_young_generation_size_in_bytes(
+          self, size,
         );
       }
     }
