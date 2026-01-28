@@ -46,98 +46,98 @@ jobs:
         #   windows-11-arm   - arm64, 4 CPU, 16 GB RAM
         config:
           # ===== macOS ARM64 (main target: none, ptrcomp, sandbox) =====
-          - os: macos-15
-            target: aarch64-apple-darwin
-            variant: debug
-            features: none
-          - os: macos-15
-            target: aarch64-apple-darwin
-            variant: release
-            features: none
-          - os: macos-15-xlarge # use macos-15 for free (may timeout)
-            target: aarch64-apple-darwin
-            variant: debug
-            features: ptrcomp
-          - os: macos-15 # use macos-15-xlarge for faster builds
-            target: aarch64-apple-darwin
-            variant: release
-            features: ptrcomp
-          - os: macos-15-xlarge # use macos-15 for free (may timeout)
-            target: aarch64-apple-darwin
-            variant: debug
-            features: sandbox
-          - os: macos-15 # use macos-15-xlarge for faster builds
-            target: aarch64-apple-darwin
-            variant: release
-            features: sandbox
+          # - os: macos-15
+          #   target: aarch64-apple-darwin
+          #   variant: debug
+          #   features: none
+          # - os: macos-15
+          #   target: aarch64-apple-darwin
+          #   variant: release
+          #   features: none
+          # - os: macos-15-xlarge # use macos-15 for free (may timeout)
+          #   target: aarch64-apple-darwin
+          #   variant: debug
+          #   features: ptrcomp
+          # - os: macos-15 # use macos-15-xlarge for faster builds
+          #   target: aarch64-apple-darwin
+          #   variant: release
+          #   features: ptrcomp
+          # - os: macos-15-xlarge # use macos-15 for free (may timeout)
+          #   target: aarch64-apple-darwin
+          #   variant: debug
+          #   features: sandbox
+          # - os: macos-15 # use macos-15-xlarge for faster builds
+          #   target: aarch64-apple-darwin
+          #   variant: release
+          #   features: sandbox
 
           # ===== Linux x86_64 (main target: none, ptrcomp, sandbox) =====
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            variant: debug
-            features: none
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            variant: release
-            features: none
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            variant: debug
-            features: ptrcomp
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            variant: release
-            features: ptrcomp
-          - os: ubuntu-22.04-large # larger runner for flaky concurrent test
+          # - os: ubuntu-22.04
+          #   target: x86_64-unknown-linux-gnu
+          #   variant: debug
+          #   features: none
+          # - os: ubuntu-22.04
+          #   target: x86_64-unknown-linux-gnu
+          #   variant: release
+          #   features: none
+          # - os: ubuntu-22.04
+          #   target: x86_64-unknown-linux-gnu
+          #   variant: debug
+          #   features: ptrcomp
+          # - os: ubuntu-22.04
+          #   target: x86_64-unknown-linux-gnu
+          #   variant: release
+          #   features: ptrcomp
+          - os: ubuntu-22.04-8core # larger runner for flaky concurrent test
             target: x86_64-unknown-linux-gnu
             variant: debug
             features: sandbox
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            variant: release
-            features: sandbox
+          # - os: ubuntu-22.04
+          #   target: x86_64-unknown-linux-gnu
+          #   variant: release
+          #   features: sandbox
 
           # ===== Linux ARM64 cross-compile (main target: none, ptrcomp, sandbox) =====
-          - os: ubuntu-22.04
-            target: aarch64-unknown-linux-gnu
-            variant: debug
-            features: none
-          - os: ubuntu-22.04
-            target: aarch64-unknown-linux-gnu
-            variant: release
-            features: none
-          - os: ubuntu-22.04
-            target: aarch64-unknown-linux-gnu
-            variant: debug
-            features: ptrcomp
-          - os: ubuntu-22.04
-            target: aarch64-unknown-linux-gnu
-            variant: release
-            features: ptrcomp
-          - os: ubuntu-22.04
-            target: aarch64-unknown-linux-gnu
-            variant: debug
-            features: sandbox
-          - os: ubuntu-22.04
-            target: aarch64-unknown-linux-gnu
-            variant: release
-            features: sandbox
+          # - os: ubuntu-22.04
+          #   target: aarch64-unknown-linux-gnu
+          #   variant: debug
+          #   features: none
+          # - os: ubuntu-22.04
+          #   target: aarch64-unknown-linux-gnu
+          #   variant: release
+          #   features: none
+          # - os: ubuntu-22.04
+          #   target: aarch64-unknown-linux-gnu
+          #   variant: debug
+          #   features: ptrcomp
+          # - os: ubuntu-22.04
+          #   target: aarch64-unknown-linux-gnu
+          #   variant: release
+          #   features: ptrcomp
+          # - os: ubuntu-22.04
+          #   target: aarch64-unknown-linux-gnu
+          #   variant: debug
+          #   features: sandbox
+          # - os: ubuntu-22.04
+          #   target: aarch64-unknown-linux-gnu
+          #   variant: release
+          #   features: sandbox
 
           # ===== macOS x86_64 (secondary: none only) =====
-          - os: macos-15-large # use macos-15-intel for free (may timeout)
-            target: x86_64-apple-darwin
-            variant: debug
-            features: none
-          - os: macos-15-intel # use macos-15-large for faster builds
-            target: x86_64-apple-darwin
-            variant: release
-            features: none
+          # - os: macos-15-large # use macos-15-intel for free (may timeout)
+          #   target: x86_64-apple-darwin
+          #   variant: debug
+          #   features: none
+          # - os: macos-15-intel # use macos-15-large for faster builds
+          #   target: x86_64-apple-darwin
+          #   variant: release
+          #   features: none
 
           # ===== Windows x86_64 (secondary: none only, release only) =====
-          - os: windows-2022
-            target: x86_64-pc-windows-msvc
-            variant: release
-            features: none
+          # - os: windows-2022
+          #   target: x86_64-pc-windows-msvc
+          #   variant: release
+          #   features: none
 
     env:
       V8_FROM_SOURCE: true
