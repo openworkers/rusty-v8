@@ -556,14 +556,17 @@ fn prebuilt_profile() -> &'static str {
 }
 
 fn prebuilt_features_suffix() -> String {
-  let mut features = String::new();
-  if env::var("CARGO_FEATURE_V8_ENABLE_POINTER_COMPRESSION").is_ok() {
-    features.push_str("_ptrcomp");
-  }
+  // Sandbox implies pointer compression, so we only use "_sandbox" suffix
+  // (not "_ptrcomp_sandbox") to match CI artifact naming
   if env::var("CARGO_FEATURE_V8_ENABLE_SANDBOX").is_ok() {
-    features.push_str("_sandbox");
+    return "_sandbox".to_string();
   }
-  features
+
+  if env::var("CARGO_FEATURE_V8_ENABLE_POINTER_COMPRESSION").is_ok() {
+    return "_ptrcomp".to_string();
+  }
+
+  String::new()
 }
 
 fn static_lib_name(suffix: &str) -> String {
@@ -579,7 +582,8 @@ fn static_lib_url() -> String {
   if let Ok(custom_archive) = env::var("RUSTY_V8_ARCHIVE") {
     return custom_archive;
   }
-  let default_base = "https://github.com/openworkers/rusty-v8/releases/download";
+  let default_base =
+    "https://github.com/openworkers/rusty-v8/releases/download";
   let base =
     env::var("RUSTY_V8_MIRROR").unwrap_or_else(|_| default_base.into());
   let version = env::var("CARGO_PKG_VERSION").unwrap();
@@ -865,7 +869,8 @@ fn print_prebuilt_src_binding_path() {
 
   if !src_binding_path.exists() {
     fs::create_dir_all(&out_dir).unwrap();
-    let default_base = "https://github.com/openworkers/rusty-v8/releases/download";
+    let default_base =
+      "https://github.com/openworkers/rusty-v8/releases/download";
     let base =
       env::var("RUSTY_V8_MIRROR").unwrap_or_else(|_| default_base.into());
     let version = env::var("CARGO_PKG_VERSION").unwrap();
