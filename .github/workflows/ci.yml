@@ -2,7 +2,6 @@ name: ci
 
 on:
   push:
-    branches: [main]
     tags: ["**"]
   pull_request:
     branches: [main]
@@ -46,7 +45,7 @@ jobs:
         #   windows-11-arm   - arm64, 4 CPU, 16 GB RAM
         config:
           # ===== macOS ARM64 (main target: none, ptrcomp, sandbox) =====
-          - os: macos-15
+          - os: macos-15-xlarge # use macos-15 for free (slower)
             target: aarch64-apple-darwin
             variant: debug
             features: none
@@ -128,7 +127,7 @@ jobs:
             target: x86_64-apple-darwin
             variant: debug
             features: none
-          - os: macos-15-intel # use macos-15-large for faster builds
+          - os: macos-15-large # use macos-15-intel for free (slower)
             target: x86_64-apple-darwin
             variant: release
             features: none
