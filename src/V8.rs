@@ -1,7 +1,7 @@
 // Copyright 2019-2021 the Deno authors. All rights reserved. MIT license.
 use std::ffi::CStr;
 use std::ffi::CString;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use std::vec::Vec;
 
 use crate::platform::Platform;
@@ -84,7 +84,7 @@ use GlobalState::*;
 static GLOBAL_STATE: Mutex<GlobalState> = Mutex::new(Uninitialized);
 
 pub fn assert_initialized() {
-  let global_state_guard = GLOBAL_STATE.lock().unwrap();
+  let global_state_guard = GLOBAL_STATE.lock();
   match *global_state_guard {
     Initialized(_) => {}
     _ => panic!("Invalid global state"),
@@ -185,7 +185,7 @@ pub fn get_version() -> &'static str {
 /// Sets the v8::Platform to use. This should be invoked before V8 is
 /// initialized.
 pub fn initialize_platform(platform: SharedRef<Platform>) {
-  let mut global_state_guard = GLOBAL_STATE.lock().unwrap();
+  let mut global_state_guard = GLOBAL_STATE.lock();
   *global_state_guard = match *global_state_guard {
     Uninitialized => PlatformInitialized(platform.clone()),
     _ => panic!("Invalid global state"),
@@ -201,7 +201,7 @@ pub fn initialize_platform(platform: SharedRef<Platform>) {
 /// Initializes V8. This function needs to be called before the first Isolate
 /// is created. It always returns true.
 pub fn initialize() {
-  let mut global_state_guard = GLOBAL_STATE.lock().unwrap();
+  let mut global_state_guard = GLOBAL_STATE.lock();
   *global_state_guard = match *global_state_guard {
     PlatformInitialized(ref platform) => Initialized(platform.clone()),
     _ => panic!("Invalid global state"),
@@ -212,7 +212,7 @@ pub fn initialize() {
 /// Sets the v8::Platform to use. This should be invoked before V8 is
 /// initialized.
 pub fn get_current_platform() -> SharedRef<Platform> {
-  let global_state_guard = GLOBAL_STATE.lock().unwrap();
+  let global_state_guard = GLOBAL_STATE.lock();
   match *global_state_guard {
     Initialized(ref platform) => platform.clone(),
     _ => panic!("Invalid global state"),
@@ -232,7 +232,7 @@ pub fn get_current_platform() -> SharedRef<Platform> {
 /// Calling this function before completely disposing all isolates will lead
 /// to a crash.
 pub unsafe fn dispose() -> bool {
-  let mut global_state_guard = GLOBAL_STATE.lock().unwrap();
+  let mut global_state_guard = GLOBAL_STATE.lock();
   *global_state_guard = match *global_state_guard {
     Initialized(ref platform) => Disposed(platform.clone()),
     _ => panic!("Invalid global state"),
@@ -244,7 +244,7 @@ pub unsafe fn dispose() -> bool {
 /// Clears all references to the v8::Platform. This should be invoked after
 /// V8 was disposed. If it is called if V8 is not disposed, it will panic.
 pub fn dispose_platform() {
-  let mut global_state_guard = GLOBAL_STATE.lock().unwrap();
+  let mut global_state_guard = GLOBAL_STATE.lock();
   // First check that the global state is disposed. If it is we dispose the
   // platform. We then drop the platform.
   *global_state_guard = match *global_state_guard {

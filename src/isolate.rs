@@ -67,7 +67,8 @@ use std::ptr::addr_of_mut;
 use std::ptr::drop_in_place;
 use std::ptr::null_mut;
 use std::sync::Arc;
-use std::sync::Mutex;
+
+use parking_lot::Mutex;
 
 /// Policy for running microtasks:
 ///   - explicit: microtasks are invoked with the
@@ -1000,7 +1001,7 @@ impl Isolate {
     // methods on the isolate.
     let annex = self.get_annex_mut();
     {
-      let _lock = annex.isolate_mutex.lock().unwrap();
+      let _lock = annex.isolate_mutex.lock();
       annex.isolate = null_mut();
     }
 
@@ -1954,7 +1955,7 @@ impl IsolateHandle {
   /// Returns false if Isolate was already destroyed.
   #[inline(always)]
   pub fn terminate_execution(&self) -> bool {
-    let _lock = self.0.isolate_mutex.lock().unwrap();
+    let _lock = self.0.isolate_mutex.lock();
     if self.0.isolate.is_null() {
       false
     } else {
@@ -1979,7 +1980,7 @@ impl IsolateHandle {
   /// Returns false if Isolate was already destroyed.
   #[inline(always)]
   pub fn cancel_terminate_execution(&self) -> bool {
-    let _lock = self.0.isolate_mutex.lock().unwrap();
+    let _lock = self.0.isolate_mutex.lock();
     if self.0.isolate.is_null() {
       false
     } else {
@@ -1998,7 +1999,7 @@ impl IsolateHandle {
   /// Returns false if Isolate was already destroyed.
   #[inline(always)]
   pub fn is_execution_terminating(&self) -> bool {
-    let _lock = self.0.isolate_mutex.lock().unwrap();
+    let _lock = self.0.isolate_mutex.lock();
     if self.0.isolate.is_null() {
       false
     } else {
@@ -2023,7 +2024,7 @@ impl IsolateHandle {
     callback: InterruptCallback,
     data: *mut c_void,
   ) -> bool {
-    let _lock = self.0.isolate_mutex.lock().unwrap();
+    let _lock = self.0.isolate_mutex.lock();
     if self.0.isolate.is_null() {
       false
     } else {

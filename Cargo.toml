@@ -112,6 +112,7 @@ v8_enable_v8_checks = []
 
 [dependencies]
 bitflags = "2.5"
+parking_lot = "0.12"
 paste = "1.0"
 temporal_capi = { version = "0.1.2", features = ["zoneinfo64"] }
 
@@ -152,6 +153,10 @@ path = "build.rs"
 name = "function"
 path = "benches/function.rs"
 harness = false
+
+[[bin]]
+name = "mutex_bench"
+path = "benches/mutex_comparison.rs"
 
 [workspace]
 # Android example removed (depends on "v8" name)
