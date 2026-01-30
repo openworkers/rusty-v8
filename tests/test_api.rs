@@ -1,4 +1,5 @@
 // Copyright 2019-2021 the Deno authors. All rights reserved. MIT license.
+use parking_lot::Mutex;
 use std::any::type_name;
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -15,7 +16,6 @@ use std::ptr::addr_of_mut;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::LazyLock;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use v8::AccessorConfiguration;
 use v8::fast_api;
@@ -4605,7 +4605,7 @@ fn context_with_object_template() {
     _args: v8::PropertyCallbackArguments<'s>,
     _rv: v8::ReturnValue<()>,
   ) -> v8::Intercepted {
-    CALLS.lock().unwrap().push("definer".to_string());
+    CALLS.lock().push("definer".to_string());
     v8::Intercepted::kNo
   }
 
@@ -4616,7 +4616,7 @@ fn context_with_object_template() {
     _args: v8::PropertyCallbackArguments<'s>,
     _rv: v8::ReturnValue<()>,
   ) -> v8::Intercepted {
-    CALLS.lock().unwrap().push("setter".to_string());
+    CALLS.lock().push("setter".to_string());
     v8::Intercepted::kNo
   }
 
@@ -4642,7 +4642,6 @@ fn context_with_object_template() {
     eval(scope, r#"Object.defineProperty(globalThis, 'key', { value: 9, enumerable: true, configurable: true, writable: true })"#).unwrap();
     let calls_set = CALLS
       .lock()
-      .unwrap()
       .clone()
       .into_iter()
       .collect::<HashSet<String>>();
@@ -9874,7 +9873,6 @@ fn counter_lookup_callback() {
   extern "C" fn callback(name: *const c_char) -> *mut i32 {
     MAP
       .lock()
-      .unwrap()
       .entry(Name(name))
       .or_insert_with(|| Count(Box::leak(Box::new(0))))
       .0
@@ -9891,7 +9889,6 @@ fn counter_lookup_callback() {
 
   let count = MAP
     .lock()
-    .unwrap()
     .iter()
     .find_map(|(name, count)| {
       let name = unsafe { CStr::from_ptr(name.0) };
