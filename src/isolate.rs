@@ -2618,3 +2618,69 @@ impl DerefMut for Locker<'_> {
     unsafe { Isolate::from_raw_ref_mut(&mut self.isolate.cxx_isolate) }
   }
 }
+
+/// RAII scope that enters a V8 isolate on creation and exits on drop.
+///
+/// Mirrors C++ `v8::Isolate::Scope`. Pushes the isolate onto V8's per-isolate
+/// entry stack (setting it as `Isolate::GetCurrent()` for the current thread)
+/// and pops it when dropped.
+///
+/// # Use case: cooperative multi-isolate scheduling
+///
+/// When multiple tasks share a thread (e.g. via `spawn_local`), each holding
+/// a [`Locker`] for a different isolate, the thread-local "current isolate"
+/// (`Isolate::GetCurrent()`) can point to the wrong isolate after a task
+/// yield/resume. Wrapping each synchronous V8 work block in an `IsolateScope`
+/// ensures `GetCurrent()` returns the correct isolate.
+///
+/// V8's entry stack is per-isolate, so entering isolate X does not interfere
+/// with isolate Y's stack. This means multiple `IsolateScope`s for different
+/// isolates can coexist safely on the same thread.
+///
+/// # Example
+///
+/// ```ignore
+/// // Inside an async task holding a Locker across .await points:
+/// {
+///     let _scope = unsafe { v8::IsolateScope::new(isolate) };
+///     // V8 work: HandleScope, ContextScope, etc.
+///     // GetCurrent() == isolate, guaranteed.
+/// }
+/// // IsolateScope dropped — safe to yield to other tasks.
+/// some_async_work().await;
+/// ```
+///
+/// # Safety
+///
+/// The caller must ensure:
+/// - The isolate pointer is valid for the lifetime of this scope.
+/// - The scope is dropped before any async yield point.
+/// - A [`Locker`] is held for the isolate (V8 requires this for scope operations).
+pub struct IsolateScope {
+  isolate: *mut Isolate,
+}
+
+impl IsolateScope {
+  /// Enter the isolate.
+  ///
+  /// Pushes the isolate onto its per-thread entry stack, making it the
+  /// value returned by `Isolate::GetCurrent()`.
+  ///
+  /// # Safety
+  ///
+  /// The isolate pointer must be valid for the lifetime of this scope.
+  /// A [`Locker`] must be held for this isolate.
+  #[inline(always)]
+  pub unsafe fn new(isolate: &mut Isolate) -> Self {
+    unsafe { isolate.enter() };
+    Self { isolate }
+  }
+}
+
+impl Drop for IsolateScope {
+  /// Exit the isolate, restoring the previous `GetCurrent()` value.
+  #[inline(always)]
+  fn drop(&mut self) {
+    unsafe { (*self.isolate).exit() };
+  }
+}

@@ -429,7 +429,7 @@ dependencies = [
 
 [[package]]
 name = "openworkers-v8"
-version = "145.0.1"
+version = "145.0.1-isolate-scope"
 dependencies = [
  "align-data",
  "bindgen",
