@@ -1181,8 +1181,14 @@ impl Isolate {
   /// constructed and exited when dropped.
   #[inline(always)]
   pub unsafe fn enter(&self) {
+    let ptr = self.as_real_ptr();
+    eprintln!(
+      "[v8] Isolate::Enter({:?}) on thread {:?}",
+      ptr,
+      std::thread::current().name().unwrap_or("?")
+    );
     unsafe {
-      v8__Isolate__Enter(self.as_real_ptr());
+      v8__Isolate__Enter(ptr);
     }
   }
 
@@ -1196,8 +1202,14 @@ impl Isolate {
   /// constructed and exited when dropped.
   #[inline(always)]
   pub unsafe fn exit(&self) {
+    let ptr = self.as_real_ptr();
+    eprintln!(
+      "[v8] Isolate::Exit({:?}) on thread {:?}",
+      ptr,
+      std::thread::current().name().unwrap_or("?")
+    );
     unsafe {
-      v8__Isolate__Exit(self.as_real_ptr());
+      v8__Isolate__Exit(ptr);
     }
   }
 
@@ -2557,6 +2569,11 @@ struct IsolateExitGuard(*mut RealIsolate);
 
 impl Drop for IsolateExitGuard {
   fn drop(&mut self) {
+    eprintln!(
+      "[v8] IsolateExitGuard::drop({:?}) on thread {:?} — undoing temp Enter",
+      self.0,
+      std::thread::current().name().unwrap_or("?")
+    );
     unsafe { v8__Isolate__Exit(self.0) };
   }
 }
@@ -2585,6 +2602,14 @@ impl<'a> Locker<'a> {
   /// isolate entry will be properly reverted via a drop guard.
   pub fn new(isolate: &'a mut UnenteredIsolate) -> Self {
     let isolate_ptr = isolate.cxx_isolate;
+    let thread = std::thread::current();
+    let thread_name = thread.name().unwrap_or("?");
+
+    eprintln!(
+      "[v8] Locker::new({:?}) on thread {:?} — temp Enter for top_level_=false trick",
+      isolate_ptr.as_ptr(),
+      thread_name
+    );
 
     // Enter the isolate temporarily so the C++ Locker constructor sees
     // IsCurrent()==true. This makes it set top_level_=false, which
@@ -2604,6 +2629,12 @@ impl<'a> Locker<'a> {
     // but NOT entered — IsolateScope will manage Enter/Exit at
     // fine-grained boundaries around each block of V8 work.
     drop(exit_guard);
+
+    eprintln!(
+      "[v8] Locker::new({:?}) on thread {:?} — locked (pure mutex, not entered)",
+      isolate_ptr.as_ptr(),
+      thread_name
+    );
 
     Self {
       raw: std::mem::ManuallyDrop::new(raw),
@@ -2626,6 +2657,11 @@ impl<'a> Locker<'a> {
   /// // ... V8 work ...
   /// ```
   pub fn enter(&mut self) -> IsolateScope {
+    eprintln!(
+      "[v8] Locker::enter({:?}) on thread {:?}",
+      self.isolate.cxx_isolate.as_ptr(),
+      std::thread::current().name().unwrap_or("?")
+    );
     // SAFETY: The Locker guarantees both IsolateScope safety requirements:
     // 1. The isolate pointer is valid (Locker holds &mut UnenteredIsolate)
     // 2. The V8 mutex is held (Locker acquired it in new())
@@ -2640,6 +2676,11 @@ impl<'a> Locker<'a> {
 
 impl Drop for Locker<'_> {
   fn drop(&mut self) {
+    eprintln!(
+      "[v8] Locker::drop({:?}) on thread {:?} — unlocking (no Exit)",
+      self.isolate.cxx_isolate.as_ptr(),
+      std::thread::current().name().unwrap_or("?")
+    );
     // Just release the V8 mutex. No Isolate::Exit() needed because
     // Locker::new() already exited the isolate after construction.
     // IsolateScope manages Enter/Exit at fine-grained boundaries.
@@ -2743,8 +2784,13 @@ impl IsolateScope {
   /// of the returned `IsolateScope`. The `&mut Isolate` reference must
   /// remain valid (i.e. the `Locker` must not be dropped) until this
   /// scope is dropped.
-  #[inline(always)]
   pub unsafe fn new(isolate: &mut Isolate) -> Self {
+    let ptr = isolate.as_real_ptr();
+    eprintln!(
+      "[v8] IsolateScope::new({:?}) on thread {:?}",
+      ptr,
+      std::thread::current().name().unwrap_or("?")
+    );
     unsafe { isolate.enter() };
     Self { isolate }
   }
@@ -2752,8 +2798,13 @@ impl IsolateScope {
 
 impl Drop for IsolateScope {
   /// Exit the isolate, restoring the previous `GetCurrent()` value.
-  #[inline(always)]
   fn drop(&mut self) {
+    let ptr = unsafe { (*self.isolate).as_real_ptr() };
+    eprintln!(
+      "[v8] IsolateScope::drop({:?}) on thread {:?}",
+      ptr,
+      std::thread::current().name().unwrap_or("?")
+    );
     unsafe { (*self.isolate).exit() };
   }
 }
