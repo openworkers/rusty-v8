@@ -168,7 +168,9 @@ jobs:
         uses: dsherret/rust-toolchain-file@v1
 
       - name: Install nextest
-        uses: taiki-e/install-action@nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest@0.9.128
 
       - name: Install python
         uses: actions/setup-python@v5
