@@ -436,24 +436,12 @@ fn build_v8(is_asan: bool) {
     gn_args.push("v8_enable_sandbox=false".to_string());
     gn_args.push("use_sysroot=false".to_string());
     gn_args.push("use_custom_libcxx=false".to_string());
-    // Use system Rust toolchain — Chromium's bundled toolchain doesn't
-    // have hermit_abi. The nightly system toolchain has Hermit support.
-    gn_args.push("use_chromium_rust_toolchain=false".to_string());
-    let sysroot = get_system_rust_sysroot();
-    gn_args.push(format!("rust_sysroot_absolute=\"{sysroot}\""));
-    // Provide rustc version so find_std_rlibs.py can find the right libs
-    gn_args.push(format!(
-      "rustc_version=\"{}\"",
-      String::from_utf8(
-        Command::new("rustc")
-          .arg("--version")
-          .output()
-          .unwrap()
-          .stdout
-      )
-      .unwrap()
-      .trim()
-    ));
+    // HermitOS is a tier 3 Rust target — no prebuilt std exists in any
+    // Rust distribution. Disable GN's Rust support for the target; the
+    // Rust side (including std) is built entirely by cargo -Zbuild-std.
+    gn_args.push("enable_rust=false".to_string());
+    // temporal_capi requires Rust/GN integration which is disabled above
+    gn_args.push("v8_enable_temporal_support=false".to_string());
   }
 
   if target_triple.starts_with("i686-") {
