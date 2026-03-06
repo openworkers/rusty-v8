@@ -428,6 +428,16 @@ fn build_v8(is_asan: bool) {
     );
   }
 
+  if target_os == "hermit" {
+    gn_args.push(r#"target_os="hermit""#.to_string());
+    gn_args.push("treat_warnings_as_errors=false".to_string());
+    // HermitOS has no trap handler, no wasm trap support, no sandbox
+    gn_args.push("v8_enable_webassembly=false".to_string());
+    gn_args.push("v8_enable_sandbox=false".to_string());
+    gn_args.push("use_sysroot=false".to_string());
+    gn_args.push("use_custom_libcxx=false".to_string());
+  }
+
   if target_triple.starts_with("i686-") {
     gn_args.push(r#"target_cpu="x86""#.to_string());
   }
@@ -828,6 +838,8 @@ fn print_link_flags() {
       let target = env::var("TARGET").unwrap();
       if target.contains("msvc") {
         // nothing to link to
+      } else if target.contains("hermit") {
+        // HermitOS: no dynamic C++ stdlib to link
       } else if target.contains("apple")
         || target.contains("freebsd")
         || target.contains("openbsd")
