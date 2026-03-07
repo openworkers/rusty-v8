@@ -1,0 +1,29 @@
+From cb0ab00a5f252001ddcf6fa6fb71e9b29ac78ca3 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 6 Mar 2026 09:29:57 +0000
+Subject: [PATCH] Add HermitOS as a supported target_os
+
+Map hermit to the Linux clang toolchain and treat it as POSIX.
+
+https://claude.ai/code/session_0129FWpAacgYEECGFPwZ4PPd
+---
+ config/BUILDCONFIG.gn | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/config/BUILDCONFIG.gn b/config/BUILDCONFIG.gn
+index 38719796a..7f15c6ac0 100644
+--- a/config/BUILDCONFIG.gn
++++ b/config/BUILDCONFIG.gn
+@@ -276,6 +276,9 @@ if (target_os == "android") {
+   _default_toolchain = "//build/toolchain/aix:$target_cpu"
+ } else if (target_os == "zos") {
+   _default_toolchain = "//build/toolchain/zos:$target_cpu"
++} else if (target_os == "hermit") {
++  # HermitOS: use the Linux toolchain as a base (cross-compiled with clang)
++  _default_toolchain = "//build/toolchain/linux:clang_$target_cpu"
+ } else if (target_os == "emscripten") {
+   # Because it's too hard to remove all targets from //BUILD.gn that do not work with it.
+   assert(
+-- 
+2.43.0
+

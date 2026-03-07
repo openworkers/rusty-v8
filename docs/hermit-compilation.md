@@ -14,7 +14,53 @@ patchées :
 |--------|-------|------|
 | Build system Chromium | `build/` (sous-module) | BUILDCONFIG.gn — déclaration de la cible OS |
 | V8 C++ | `v8/` (sous-module) | Détection OS, platform layer, gardes POSIX |
-| rusty-v8 | `build.rs` (racine) | Arguments GN, flags de link |
+| rusty-v8 | `build.rs` (racine) | Arguments GN, flags de link, application des patches |
+
+## Architecture : stratégie patches
+
+Plutôt que de forker les sous-modules `v8/` et `build/`, nous utilisons une
+**stratégie de patches** (similaire à Electron pour Chromium) :
+
+```
+patches/
+├── v8/
+│   └── 0001-add-hermitos-platform-support.patch
+└── build/
+    └── 0001-add-hermitos-as-supported-target-os.patch
+```
+
+Les patches sont appliquées automatiquement par `build.rs` lors de la
+compilation pour la cible `hermit`. L'application est **idempotente** : si le
+patch est déjà appliqué (vérifié via `git apply --reverse --check`), il est
+ignoré.
+
+Avantages :
+- Les sous-modules restent pointés vers denoland (upstream)
+- Pas de forks à maintenir en sync lors des mises à jour V8
+- Les modifications sont explicites et versionnées dans `patches/`
+
+Inconvénient :
+- Si V8 upstream modifie les mêmes fichiers, les patches peuvent ne plus
+  s'appliquer et devront être régénérées
+
+### Régénérer un patch
+
+Si un patch doit être mis à jour (par exemple après un rebase V8) :
+
+```bash
+# 1. Appliquer le patch actuel
+cd v8
+git apply ../patches/v8/0001-add-hermitos-platform-support.patch
+
+# 2. Faire les ajustements nécessaires
+# ... éditer les fichiers ...
+
+# 3. Régénérer le patch
+git diff > ../patches/v8/0001-add-hermitos-platform-support.patch
+
+# 4. Nettoyer
+git checkout .
+```
 
 ## Prérequis
 
@@ -26,85 +72,68 @@ patchées :
   convient)
 - Python 3 (pour GN)
 - Ninja
+- Git (pour `git apply` des patches)
 
-## Modifications détaillées
+## Contenu des patches
 
-### 1. `build/config/BUILDCONFIG.gn` — Déclarer la cible
+### Patch `build/` : `0001-add-hermitos-as-supported-target-os.patch`
 
-GN ne connaît pas `hermit` comme OS valide. Sans ce patch, `gn gen` échoue
-immédiatement.
+GN ne connaît pas `hermit` comme OS valide. Ce patch ajoute 3 lignes dans
+`config/BUILDCONFIG.gn` :
 
 ```gn
-# Après le bloc "zos", ajouter :
 } else if (target_os == "hermit") {
   # HermitOS : utiliser le toolchain Linux/Clang comme base
   _default_toolchain = "//build/toolchain/linux:clang_$target_cpu"
 ```
 
 On réutilise le toolchain Linux car HermitOS utilise le même ABI (System V
-x86_64) et le même format binaire (ELF). Clang sait déjà produire du code
-pour cette cible.
+x86_64) et le même format binaire (ELF).
 
-### 2. `v8/include/v8config.h` — Détection de l'OS
+### Patch `v8/` : `0001-add-hermitos-platform-support.patch`
 
-V8 utilise des macros `V8_OS_*` pour toute la logique conditionnelle. Il faut
-déclarer `V8_OS_HERMIT` et `V8_OS_POSIX`.
+Ce patch touche 5 fichiers :
 
-```c
-// IMPORTANT : placer AVANT le bloc __linux__ car HermitOS définit aussi
-// __linux__ dans certains cas.
+#### `include/v8config.h` — Détection de l'OS
 
-#elif defined(__hermit__)
-# define V8_OS_HERMIT 1
-# define V8_OS_POSIX 1
-# define V8_OS_STRING "hermit"
-```
+Déclare `V8_OS_HERMIT` et `V8_OS_POSIX`. Placé AVANT le bloc `__linux__`
+car HermitOS peut aussi définir `__linux__`.
 
-Pour les headers d'inclusion au début du fichier :
-```c
-#elif defined(__hermit__)
-// HermitOS: no special platform headers needed
-```
+#### `src/base/platform/platform-hermit.cc` — Platform layer (nouveau fichier)
 
-### 3. `v8/src/base/platform/platform-hermit.cc` — Platform layer
-
-V8 a besoin d'une implémentation de l'interface OS pour chaque plateforme.
-Le fichier est inspiré de `platform-aix.cc` (autre plateforme POSIX limitée) :
-
-Fonctions implémentées :
+Inspiré de `platform-aix.cc`. Fonctions implémentées :
 - `OS::CreateTimezoneCache()` → `PosixDefaultTimezoneCache`
 - `OS::SignalCodeMovingGC()` → no-op
 - `OS::AdjustSchedulingParams()` → no-op
 - `OS::GetSharedLibraryAddresses()` → vecteur vide (pas de .so)
-- `OS::GetFirstFreeMemoryRangeWithin()` → `nullopt` (pas de `/proc/self/maps`)
+- `OS::GetFirstFreeMemoryRangeWithin()` → `nullopt`
 - `OS::RemapPages()` → `false` (pas de `mremap`)
 - `OS::DiscardSystemPages()` → no-op (pas de `madvise`)
-- `OS::DecommitPages()` → `mmap(MAP_FIXED | MAP_ANONYMOUS | PROT_NONE)` pour
-  libérer les pages physiques
+- `OS::DecommitPages()` → `mmap(MAP_FIXED | MAP_ANONYMOUS | PROT_NONE)`
 
-### 4. `v8/BUILD.gn` — Enregistrer le fichier source
+#### `BUILD.gn` — Enregistrement du fichier source
 
 ```gn
-  } else if (current_os == "hermit") {
-    sources += [
-      "src/base/debug/stack_trace_posix.cc",
-      "src/base/platform/platform-hermit.cc",
-    ]
-  }
+} else if (current_os == "hermit") {
+  sources += [
+    "src/base/debug/stack_trace_posix.cc",
+    "src/base/platform/platform-hermit.cc",
+  ]
+}
 ```
 
-### 5. `v8/src/base/platform/platform-posix.cc` — Gardes de compilation
+#### `src/base/platform/platform-posix.cc` — Gardes de compilation
 
-Plusieurs parties du code POSIX partagé utilisent des APIs absentes de HermitOS :
+| API manquante | Solution |
+|---------------|----------|
+| `<sys/syscall.h>` | Exclure via `!V8_OS_HERMIT` |
+| `DiscardSystemPages` (madvise) | `#if !V8_OS_HERMIT` |
+| `DecommitPages` (mremap/madvise) | `#if !defined(_AIX) && !V8_OS_HERMIT` |
+| `pthread_getattr_np` | `#elif V8_OS_HERMIT` → retourner `nullptr` |
 
-| API manquante | Fichier | Solution |
-|---------------|---------|----------|
-| `<sys/syscall.h>` | platform-posix.cc:77 | Exclure via `!V8_OS_HERMIT` |
-| `DiscardSystemPages` (madvise) | platform-posix.cc:618 | `#if !V8_OS_HERMIT` (fourni dans platform-hermit.cc) |
-| `DecommitPages` (mremap/madvise) | platform-posix.cc:652 | `#if !defined(_AIX) && !V8_OS_HERMIT` |
-| `pthread_getattr_np` | platform-posix.cc:1441 | `#elif V8_OS_HERMIT` → retourner `nullptr` |
+## Modifications dans `build.rs`
 
-### 6. `build.rs` — Arguments GN côté Rust
+### Arguments GN
 
 ```rust
 if target_os == "hermit" {
@@ -114,88 +143,66 @@ if target_os == "hermit" {
     gn_args.push("v8_enable_sandbox=false".to_string());
     gn_args.push("use_sysroot=false".to_string());
     gn_args.push("use_custom_libcxx=false".to_string());
+    gn_args.push("enable_rust=false".to_string());
+    gn_args.push("v8_enable_temporal_support=false".to_string());
 }
 ```
 
 Justifications :
-- **`v8_enable_webassembly=false`** : HermitOS n'a pas de signal handler pour
-  les trap WASM (pas de `sigaltstack` fiable)
-- **`v8_enable_sandbox=false`** : Le sandbox V8 nécessite des fonctionnalités
-  mémoire avancées (reservation de 1 TB d'espace d'adressage virtuel)
+- **`v8_enable_webassembly=false`** : Pas de signal handler pour les trap WASM
+- **`v8_enable_sandbox=false`** : Nécessite 1 TB de réservation mémoire virtuelle
 - **`use_sysroot=false`** : Pas de sysroot Chromium pour Hermit
-- **`use_custom_libcxx=false`** : Utiliser la libc++ du toolchain, pas celle
-  de Chromium
-- **`treat_warnings_as_errors=false`** : Certains headers POSIX incomplets
-  génèrent des warnings
+- **`use_custom_libcxx=false`** : Utiliser la libc++ du toolchain
+- **`enable_rust=false`** : Voir section ci-dessous
+- **`v8_enable_temporal_support=false`** : Dépend de `enable_rust`
+- **`treat_warnings_as_errors=false`** : Headers POSIX incomplets
 
-Pour le link, HermitOS n'a pas de `libc++.so` dynamique :
+### Lien C++
+
+HermitOS n'a pas de `libc++.so` dynamique :
 ```rust
 } else if target.contains("hermit") {
     // HermitOS: no dynamic C++ stdlib to link
 }
 ```
 
-## Problème non traité : `enable_rust` dans GN
+## Pourquoi `enable_rust=false` dans GN
 
-Par défaut, le build GN de V8 active `enable_rust=true`, ce qui tente de
-compiler la stdlib Rust via GN (pour les composants internes de Chromium comme
-`libminiz_oxide`). Cela pose plusieurs problèmes pour HermitOS :
+Par défaut, GN active `enable_rust=true`, ce qui compile la stdlib Rust pour
+les composants internes de Chromium (`libminiz_oxide`, etc.). Deux problèmes :
 
 ### Le problème adler vs adler2
 
-La stdlib Rust a renommé la crate `adler` en `adler2` (Rust 1.79+). Le système
-de build GN de Chromium choisit le nom en fonction de `rustc_nightly_capability` :
-- `true` → cherche `libadler2`
-- `false` → cherche `libadler`
-
-Quand on utilise un toolchain Rust externe (`use_chromium_rust_toolchain=false`),
-GN force `rustc_nightly_capability=false` même si le toolchain est un nightly
-récent.
+La stdlib a renommé `adler` en `adler2` (Rust 1.79+). GN choisit le nom via
+`rustc_nightly_capability`, mais force `false` quand on utilise un toolchain
+externe — même s'il est nightly.
 
 ### Le problème du target triple
 
-Le fichier `build/config/rust.gni` maintient une liste blanche de triples Rust
-connus. `x86_64-unknown-hermit` n'y figure pas, ce qui cause des erreurs dans
-la résolution du sysroot Rust.
+`build/config/rust.gni` maintient une liste blanche de triples Rust.
+`x86_64-unknown-hermit` n'y figure pas.
 
-### Solution retenue
+### Solution
 
-**Désactiver `enable_rust` dans GN** (`enable_rust=false`). La compilation Rust
-est déjà gérée par Cargo côté rusty-v8 ; V8 lui-même est du C++ pur. Activer
-Rust dans GN ne sert qu'à des composants internes de Chromium (compression,
-etc.) qui ne sont pas nécessaires pour rusty-v8.
-
-Cela rend les problèmes adler/adler2 et target triple non pertinents.
-
-> **Note** : Cet argument n'est pas encore ajouté dans le commit actuel. Il
-> faudra ajouter `gn_args.push("enable_rust=false".to_string());` dans le bloc
-> hermit de `build.rs` si la compilation GN échoue sur les composants Rust.
+`enable_rust=false` dans GN. La compilation Rust est gérée par Cargo ;
+V8 est du C++ pur. Les composants Chromium nécessitant Rust ne sont pas
+utilisés par rusty-v8.
 
 ## Compilation
 
 ```bash
 # Depuis la racine de rusty-v8
-cargo build --target x86_64-unknown-hermit
+V8_FROM_SOURCE=1 cargo build --target x86_64-unknown-hermit
 
-# Ou avec des variables d'environnement pour le debug
+# Avec debug GN
 V8_FROM_SOURCE=1 PRINT_GN_ARGS=1 cargo build --target x86_64-unknown-hermit
 ```
 
-## État actuel et limitations
+## Limitations
 
-- **WebAssembly** : désactivé. Pourrait être réactivé si HermitOS implémente
-  `sigaltstack` et les signal handlers complets.
-- **Sandbox V8** : désactivé. Nécessiterait des modifications significatives
-  du virtual memory allocator de V8.
-- **Profiling / stack traces** : `GetSharedLibraryAddresses` retourne un
-  vecteur vide ; `ObtainCurrentThreadStackStart` retourne `nullptr`. Les
-  profilers V8 ne fonctionneront pas.
-- **Pointer compression** : devrait fonctionner (activé par défaut sur x86_64).
-- **Snapshots** : devraient fonctionner (pas de dépendance OS).
-
-## Références
-
-- [RustyHermit](https://github.com/hermitcore/rusty-hermit) — runtime Rust
-  pour HermitOS
-- [V8 Platform API](https://v8.dev/docs/embed#platform) — interface plateforme
-- Commits similaires : `platform-aix.cc`, `platform-zos.cc` dans V8
+- **WebAssembly** : désactivé (pas de `sigaltstack` fiable)
+- **Sandbox V8** : désactivé (réservation mémoire insuffisante)
+- **Profiling / stack traces** : non fonctionnel
+- **Pointer compression** : devrait fonctionner (x86_64)
+- **Snapshots** : devraient fonctionner (pas de dépendance OS)
+- **Temporal API** : désactivé (dépend de enable_rust)

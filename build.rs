@@ -22,6 +22,7 @@ fn main() {
   println!("cargo:rerun-if-changed=.gn");
   println!("cargo:rerun-if-changed=BUILD.gn");
   println!("cargo:rerun-if-changed=src/binding.cc");
+  println!("cargo:rerun-if-changed=patches");
 
   // These are all the environment variables that we check. This is
   // probably more than what is needed, but missing an important
@@ -254,11 +255,21 @@ fn build_v8(is_asan: bool) {
 
   download_rust_toolchain();
 
+  let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+
+  // Apply hermit patches to submodules before configuring GN
+  if target_os == "hermit" {
+    apply_patches("v8", &["patches/v8/0001-add-hermitos-platform-support.patch"]);
+    apply_patches(
+      "build",
+      &["patches/build/0001-add-hermitos-as-supported-target-os.patch"],
+    );
+  }
+
   // `#[cfg(...)]` attributes don't work as expected from build.rs -- they refer to the configuration
   // of the host system which the build.rs script will be running on. In short, `cfg!(target_<os/arch>)`
   // is actually the host os/arch instead of target os/arch while cross compiling. Instead, Environment variables
   // are the officially approach to get the target os/arch in build.rs.
-  let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
   let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
   // On windows, rustc cannot link with a V8 debug build.
   let mut gn_args = if is_debug() && target_os != "windows" {
@@ -1278,6 +1289,60 @@ pub fn parse_ninja_graph(s: &str) -> HashSet<String> {
     }
   }
   out
+}
+
+/// Apply a set of patch files to a submodule directory.
+///
+/// Each patch is applied with `git apply --check` first to see if it has
+/// already been applied (or if the patch is otherwise a no-op). Only patches
+/// that haven't been applied yet are actually applied.
+fn apply_patches(submodule: &str, patches: &[&str]) {
+  let root = env::var("CARGO_MANIFEST_DIR")
+    .map(PathBuf::from)
+    .unwrap();
+  let sub_dir = root.join(submodule);
+
+  for patch_rel in patches {
+    let patch_path = root.join(patch_rel);
+    assert!(
+      patch_path.exists(),
+      "Patch file not found: {}",
+      patch_path.display()
+    );
+
+    // Check if the patch has already been applied (reverse-apply check)
+    let already_applied = Command::new("git")
+      .arg("apply")
+      .arg("--reverse")
+      .arg("--check")
+      .arg(&patch_path)
+      .current_dir(&sub_dir)
+      .stdout(Stdio::null())
+      .stderr(Stdio::null())
+      .status()
+      .map(|s| s.success())
+      .unwrap_or(false);
+
+    if already_applied {
+      println!(
+        "cargo:warning=Patch already applied, skipping: {patch_rel}"
+      );
+      continue;
+    }
+
+    println!("cargo:warning=Applying patch: {patch_rel}");
+    let status = Command::new("git")
+      .arg("apply")
+      .arg(&patch_path)
+      .current_dir(&sub_dir)
+      .status()
+      .unwrap_or_else(|e| panic!("Failed to run git apply: {e}"));
+
+    assert!(
+      status.success(),
+      "Failed to apply patch: {patch_rel}"
+    );
+  }
 }
 
 fn env_bool(key: &str) -> bool {

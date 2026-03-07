@@ -1,0 +1,198 @@
+From b87ad8ff17001e2cb1db2a22f243040b5c82e987 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 6 Mar 2026 09:29:46 +0000
+Subject: [PATCH] Add HermitOS platform support
+
+Add V8_OS_HERMIT detection in v8config.h, a minimal platform-hermit.cc
+(inspired by AIX: no /proc, no mremap, no madvise), and guards in
+platform-posix.cc for sys/syscall.h, pthread_getattr_np,
+DiscardSystemPages, and DecommitPages.
+
+https://claude.ai/code/session_0129FWpAacgYEECGFPwZ4PPd
+---
+ BUILD.gn                             |  5 ++
+ include/v8config.h                   |  7 +++
+ src/base/platform/platform-hermit.cc | 78 ++++++++++++++++++++++++++++
+ src/base/platform/platform-posix.cc  | 11 ++--
+ 4 files changed, 98 insertions(+), 3 deletions(-)
+ create mode 100644 src/base/platform/platform-hermit.cc
+
+diff --git a/BUILD.gn b/BUILD.gn
+index 6801927b0d0..87751609ba0 100644
+--- a/BUILD.gn
++++ b/BUILD.gn
+@@ -7075,6 +7075,11 @@ v8_component("v8_libbase") {
+       "src/base/debug/stack_trace_zos.cc",
+       "src/base/platform/platform-zos.cc",
+     ]
++  } else if (current_os == "hermit") {
++    sources += [
++      "src/base/debug/stack_trace_posix.cc",
++      "src/base/platform/platform-hermit.cc",
++    ]
+   }
+ 
+   if (v8_current_cpu == "mips64") {
+diff --git a/include/v8config.h b/include/v8config.h
+index ec33ee7d10b..008230fe2f6 100644
+--- a/include/v8config.h
++++ b/include/v8config.h
+@@ -29,6 +29,8 @@ path. Add it with -I<path> to the command line
+ # include <sys/cdefs.h>
+ #elif defined(__APPLE__)
+ # include <TargetConditionals.h>
++#elif defined(__hermit__)
++// HermitOS: no special platform headers needed
+ #elif defined(__linux__)
+ # include <features.h>
+ #elif defined(__MVS__)
+@@ -122,6 +124,11 @@ path. Add it with -I<path> to the command line
+ # define V8_OS_POSIX 1
+ # define V8_OS_STRING "cygwin"
+ 
++#elif defined(__hermit__)
++# define V8_OS_HERMIT 1
++# define V8_OS_POSIX 1
++# define V8_OS_STRING "hermit"
++
+ #elif defined(__linux__)
+ # define V8_OS_LINUX 1
+ # define V8_OS_POSIX 1
+diff --git a/src/base/platform/platform-hermit.cc b/src/base/platform/platform-hermit.cc
+new file mode 100644
+index 00000000000..ac4f5a27715
+--- /dev/null
++++ b/src/base/platform/platform-hermit.cc
+@@ -0,0 +1,78 @@
++// Copyright 2025 the V8 project authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++// Platform-specific code for HermitOS goes here. For the POSIX-compatible
++// parts, the implementation is in platform-posix.cc.
++
++#include <pthread.h>
++#include <semaphore.h>
++#include <signal.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <sys/time.h>
++
++#include <errno.h>
++#include <fcntl.h>
++#include <sys/mman.h>
++#include <sys/stat.h>
++#include <sys/types.h>
++#include <unistd.h>
++
++#include <cmath>
++#include <optional>
++
++#include "src/base/macros.h"
++#include "src/base/platform/platform-posix-time.h"
++#include "src/base/platform/platform-posix.h"
++#include "src/base/platform/platform.h"
++
++namespace v8 {
++namespace base {
++
++TimezoneCache* OS::CreateTimezoneCache() {
++  return new PosixDefaultTimezoneCache();
++}
++
++void OS::SignalCodeMovingGC() {}
++
++void OS::AdjustSchedulingParams() {}
++
++std::vector<OS::SharedLibraryAddress> OS::GetSharedLibraryAddresses() {
++  return {};
++}
++
++std::optional<OS::MemoryRange> OS::GetFirstFreeMemoryRangeWithin(
++    OS::Address boundary_start, OS::Address boundary_end, size_t minimum_size,
++    size_t alignment) {
++  return std::nullopt;
++}
++
++// HermitOS does not support remapping pages from file-backed mappings.
++// static
++bool OS::RemapPages(const void* address, size_t size, void* new_address,
++                    MemoryPermission access) {
++  return false;
++}
++
++// static
++bool OS::DiscardSystemPages(void* address, size_t size) {
++  // HermitOS does not have madvise. Use mprotect to decommit.
++  DCHECK_EQ(0, reinterpret_cast<uintptr_t>(address) % CommitPageSize());
++  DCHECK_EQ(0, size % CommitPageSize());
++  return true;
++}
++
++// static
++bool OS::DecommitPages(void* address, size_t size) {
++  DCHECK_EQ(0, reinterpret_cast<uintptr_t>(address) % CommitPageSize());
++  DCHECK_EQ(0, size % CommitPageSize());
++  // Re-map the pages as PROT_NONE to decommit.
++  void* ptr = mmap(address, size, PROT_NONE,
++                   MAP_FIXED | MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
++  if (ptr != address) return false;
++  return true;
++}
++
++}  // namespace base
++}  // namespace v8
+diff --git a/src/base/platform/platform-posix.cc b/src/base/platform/platform-posix.cc
+index 2c94c1b2e65..5c99fdab72f 100644
+--- a/src/base/platform/platform-posix.cc
++++ b/src/base/platform/platform-posix.cc
+@@ -74,7 +74,7 @@
+ #include <sys/resource.h>
+ #endif
+ 
+-#if !defined(_AIX) && !defined(V8_OS_FUCHSIA) && !V8_OS_ZOS
++#if !defined(_AIX) && !defined(V8_OS_FUCHSIA) && !V8_OS_ZOS && !V8_OS_HERMIT
+ #include <sys/syscall.h>
+ #endif
+ 
+@@ -615,6 +615,7 @@ bool OS::RecommitPages(void* address, size_t size, MemoryPermission access) {
+   return true;
+ }
+ 
++#if !V8_OS_HERMIT
+ // static
+ bool OS::DiscardSystemPages(void* address, size_t size) {
+   // Roughly based on PartitionAlloc's DiscardSystemPagesInternal
+@@ -649,8 +650,9 @@ bool OS::DiscardSystemPages(void* address, size_t size) {
+   CHECK_EQ(0, ret);
+   return true;
+ }
++#endif  // !V8_OS_HERMIT
+ 
+-#if !defined(_AIX)
++#if !defined(_AIX) && !V8_OS_HERMIT
+ // See AIX version for details.
+ // static
+ bool OS::DecommitPages(void* address, size_t size) {
+@@ -672,7 +674,7 @@ bool OS::DecommitPages(void* address, size_t size) {
+   CHECK_EQ(ret, address);
+   return true;
+ }
+-#endif  // !defined(_AIX)
++#endif  // !defined(_AIX) && !V8_OS_HERMIT
+ #endif  // !V8_OS_ZOS
+ 
+ // static
+@@ -1438,6 +1440,9 @@ Stack::StackSlot Stack::ObtainCurrentThreadStackStart() {
+   }
+   void* stack_start = reinterpret_cast<uint8_t*>(stack.ss_sp) + stack.ss_size;
+   return stack_start;
++#elif V8_OS_HERMIT
++  // HermitOS does not support pthread_getattr_np.
++  return nullptr;
+ #else
+   pthread_attr_t attr;
+   int error = pthread_getattr_np(pthread_self(), &attr);
+-- 
+2.43.0
+
