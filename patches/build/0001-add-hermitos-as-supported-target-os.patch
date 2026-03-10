@@ -21,3 +21,18 @@ index 38719796a..fb54c372b 100644
  is_mac = current_os == "mac"
  is_wasm = current_os == "emscripten"
  is_watchos = current_os == "watchos"
+diff --git a/config/c++/modules.gni b/config/c++/modules.gni
+index ae3472939..621f58561 100644
+--- a/config/c++/modules.gni
++++ b/config/c++/modules.gni
+@@ -20,8 +20,8 @@ declare_args() {
+ }
+ 
+ module_platform = "${current_os}-${current_cpu}"
+-if (is_chromeos) {
+-  # ChromeOS uses the linux sysroot.
++if (is_chromeos || current_os == "hermit") {
++  # ChromeOS and HermitOS use the linux sysroot / module platform.
+   module_platform = "linux"
+ } else if (is_fuchsia || is_mac || is_linux || is_win) {
+   # Currently, these generate the same sysroot for all architectures. This is
