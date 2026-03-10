@@ -449,6 +449,7 @@ fn build_v8(is_asan: bool) {
 
   if target_os == "hermit" {
     gn_args.push(r#"target_os="hermit""#.to_string());
+    gn_args.push("treat_warnings_as_errors=false".to_string());
     // HermitOS has no trap handler, no wasm trap support, no sandbox
     gn_args.push("v8_enable_webassembly=false".to_string());
     gn_args.push("v8_enable_sandbox=false".to_string());
