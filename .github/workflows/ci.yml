@@ -46,7 +46,7 @@ jobs:
         #   windows-11-arm   - arm64, 4 CPU, 16 GB RAM
         config:
           # ===== HermitOS x86_64 (cross-compile, build only) =====
-          - os: ubuntu-22.04-16core
+          - os: ubuntu-22.04
             target: x86_64-unknown-hermit
             variant: release
             features: none
