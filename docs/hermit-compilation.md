@@ -68,8 +68,14 @@ git checkout .
   ```bash
   rustup target add x86_64-unknown-hermit
   ```
-- Clang/LLVM (le toolchain Chromium embarqué dans `third_party/llvm-build`
-  convient)
+- **Clang 19+** avec `libclang` — nécessaire pour bindgen (V8 utilise une
+  libc++ récente qui requiert des builtins Clang 19+). Sur Ubuntu :
+  ```bash
+  # Ajouter le dépôt LLVM si nécessaire
+  wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
+  echo "deb https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-19 main" | sudo tee /etc/apt/sources.list.d/llvm-19.list
+  sudo apt-get update && sudo apt-get install libclang-19-dev
+  ```
 - Python 3 (pour GN)
 - Ninja
 - Git (pour `git apply` des patches)
@@ -78,8 +84,9 @@ git checkout .
 
 ### Patch `build/` : `0001-add-hermitos-as-supported-target-os.patch`
 
-GN ne connaît pas `hermit` comme OS valide. Ce patch ajoute 3 lignes dans
-`config/BUILDCONFIG.gn` :
+GN ne connaît pas `hermit` comme OS valide. Ce patch modifie deux fichiers :
+
+#### `config/BUILDCONFIG.gn` — Toolchain et `is_linux`
 
 ```gn
 } else if (target_os == "hermit") {
@@ -87,8 +94,25 @@ GN ne connaît pas `hermit` comme OS valide. Ce patch ajoute 3 lignes dans
   _default_toolchain = "//build/toolchain/linux:clang_$target_cpu"
 ```
 
+Et étend `is_linux` pour inclure hermit :
+```gn
+is_linux = current_os == "linux" || current_os == "hermit"
+```
+
 On réutilise le toolchain Linux car HermitOS utilise le même ABI (System V
-x86_64) et le même format binaire (ELF).
+x86_64) et le même format binaire (ELF). `is_linux` est nécessaire pour que
+le template `clang_lib` (dans `build/config/clang/BUILD.gn`) trouve les
+runtime libraries clang dans `x86_64-unknown-linux-gnu/`.
+
+#### `config/c++/modules.gni` — Module platform
+
+Mappe hermit vers la plateforme `"linux"` pour les modules clang :
+```gn
+if (is_chromeos || current_os == "hermit") {
+  module_platform = "linux"
+```
+
+Sans cela, GN cherche `build/modules/hermit/BUILD.gn` qui n'existe pas.
 
 ### Patch `v8/` : `0001-add-hermitos-platform-support.patch`
 
@@ -132,6 +156,26 @@ Inspiré de `platform-aix.cc`. Fonctions implémentées :
 | `pthread_getattr_np` | `#elif V8_OS_HERMIT` → retourner `nullptr` |
 
 ## Modifications dans `build.rs`
+
+### Bindgen (génération des bindings Rust)
+
+HermitOS est traité comme Linux pour la configuration bindgen :
+- Le répertoire de ressources clang est ajouté (headers builtins comme
+  `stddef.h`)
+- Le chemin multiarch `/usr/include/x86_64-linux-gnu` est ajouté car le
+  clang hôte ne l'inclut pas automatiquement pour une cible cross-compilation
+  (nécessaire pour `bits/libc-header-start.h` référencé par `stdint.h`)
+
+### ABI callbacks (`src/isolate.rs`)
+
+HermitOS ne définit pas `target_family` dans Rust (ni `unix` ni `windows`).
+Les types ABI pour les callbacks V8 (`RawHostImportModuleDynamicallyCallback`,
+etc.) utilisent :
+```rust
+#[cfg(any(target_family = "unix", target_os = "hermit"))]
+```
+
+HermitOS utilisant le SysV ABI (comme Unix), la variante Unix est correcte.
 
 ### Arguments GN
 
@@ -192,11 +236,19 @@ utilisés par rusty-v8.
 
 ```bash
 # Depuis la racine de rusty-v8
-V8_FROM_SOURCE=1 cargo build --target x86_64-unknown-hermit
+LIBCLANG_PATH=/usr/lib/llvm-19/lib V8_FROM_SOURCE=1 \
+  cargo +nightly build --target x86_64-unknown-hermit -Zbuild-std=std,panic_abort
 
 # Avec debug GN
-V8_FROM_SOURCE=1 PRINT_GN_ARGS=1 cargo build --target x86_64-unknown-hermit
+LIBCLANG_PATH=/usr/lib/llvm-19/lib V8_FROM_SOURCE=1 PRINT_GN_ARGS=1 \
+  cargo +nightly build --target x86_64-unknown-hermit -Zbuild-std=std,panic_abort
 ```
+
+Notes :
+- **`LIBCLANG_PATH`** : obligatoire, doit pointer vers Clang 19+
+- **`-Zbuild-std=std,panic_abort`** : hermit n'a pas de std pré-compilée,
+  `panic_abort` doit être inclus explicitement
+- **`+nightly`** : requis pour `-Zbuild-std`
 
 ## Limitations
 
