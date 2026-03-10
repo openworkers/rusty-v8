@@ -247,7 +247,7 @@ pub trait HostImportModuleDynamicallyCallback:
   fn to_c_fn(self) -> RawHostImportModuleDynamicallyCallback;
 }
 
-#[cfg(not(target_family = "windows"))]
+#[cfg(any(target_family = "unix", target_os = "hermit"))]
 pub(crate) type RawHostImportModuleDynamicallyCallback =
   for<'s> unsafe extern "C" fn(
     Local<'s, Context>,
@@ -304,7 +304,7 @@ where
       )
     }
 
-    #[cfg(not(target_family = "windows"))]
+    #[cfg(any(target_family = "unix", target_os = "hermit"))]
     #[inline(always)]
     unsafe extern "C" fn abi_adapter<
       's,
@@ -411,7 +411,7 @@ pub trait HostImportModuleWithPhaseDynamicallyCallback:
   fn to_c_fn(self) -> RawHostImportModuleWithPhaseDynamicallyCallback;
 }
 
-#[cfg(not(target_family = "windows"))]
+#[cfg(any(target_family = "unix", target_os = "hermit"))]
 pub(crate) type RawHostImportModuleWithPhaseDynamicallyCallback =
   for<'s> unsafe extern "C" fn(
     Local<'s, Context>,
@@ -473,7 +473,7 @@ where
       )
     }
 
-    #[cfg(not(target_family = "windows"))]
+    #[cfg(any(target_family = "unix", target_os = "hermit"))]
     #[inline(always)]
     unsafe extern "C" fn abi_adapter<
       's,
