@@ -186,7 +186,6 @@ if target_os == "hermit" {
     gn_args.push("v8_enable_trap_handler=false".to_string());
     gn_args.push("v8_enable_sandbox=false".to_string());
     gn_args.push("use_sysroot=false".to_string());
-    gn_args.push("use_custom_libcxx=false".to_string());
     gn_args.push("enable_rust=false".to_string());
     gn_args.push("v8_enable_temporal_support=false".to_string());
 }
@@ -198,17 +197,30 @@ Rationale:
   reliable `sigaltstack`). Minor perf penalty on WASM memory accesses.
 - **`v8_enable_sandbox=false`**: Requires 1 TB virtual memory reservation
 - **`use_sysroot=false`**: No Chromium sysroot for Hermit
-- **`use_custom_libcxx=false`**: Use the toolchain's libc++
+- **`use_custom_libcxx`**: defaults to `true` (V8's bundled libc++ is statically
+  linked into `librusty_v8.a`). See "C++ linking" section below.
 - **`enable_rust=false`**: See section below
 - **`v8_enable_temporal_support=false`**: Depends on `enable_rust`
 - **`treat_warnings_as_errors=false`**: Incomplete POSIX headers
 
 ### C++ linking
 
-HermitOS doesn't have a dynamic `libc++.so`:
+HermitOS has no system C++ standard library (`libc++.so` or `libstdc++.so`).
+
+**v0.3-hermit** used `use_custom_libcxx=false` and left the Hermit link-flags
+empty, expecting consumers to provide their own libc++. In practice, this caused
+undefined symbol errors at link time (`std::ios_base::Init`, `__cxa_atexit`,
+`operator new`, etc.) because there is no libc++ available for the Hermit target.
+
+**v0.4-hermit** fixes this by keeping the default `use_custom_libcxx=true`.
+V8's bundled libc++ and libc++abi (from `third_party/libc++` and
+`third_party/libc++abi`) are compiled and statically linked into
+`librusty_v8.a`. Consumers don't need to provide any C++ stdlib:
+
 ```rust
 } else if target.contains("hermit") {
-    // HermitOS: no dynamic C++ stdlib to link
+    // HermitOS: libc++ is statically bundled in librusty_v8.a
+    // (use_custom_libcxx=true in GN), nothing extra to link.
 }
 ```
 

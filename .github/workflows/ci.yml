@@ -48,6 +48,10 @@ jobs:
           # ===== HermitOS x86_64 (cross-compile, build only) =====
           - os: ubuntu-22.04
             target: x86_64-unknown-hermit
+            variant: debug
+            features: none
+          - os: ubuntu-22.04
+            target: x86_64-unknown-hermit
             variant: release
             features: none
 

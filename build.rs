@@ -454,7 +454,8 @@ fn build_v8(is_asan: bool) {
     gn_args.push("v8_enable_trap_handler=false".to_string());
     gn_args.push("v8_enable_sandbox=false".to_string());
     gn_args.push("use_sysroot=false".to_string());
-    gn_args.push("use_custom_libcxx=false".to_string());
+    // HermitOS: use V8's bundled libc++ (statically linked into librusty_v8.a)
+    // so consumers don't need to provide a separate C++ stdlib for Hermit.
     // HermitOS is a tier 3 Rust target — no prebuilt std exists in any
     // Rust distribution. Disable GN's Rust support for the target; the
     // Rust side (including std) is built entirely by cargo -Zbuild-std.
@@ -864,7 +865,8 @@ fn print_link_flags() {
       if target.contains("msvc") {
         // nothing to link to
       } else if target.contains("hermit") {
-        // HermitOS: no dynamic C++ stdlib to link
+        // HermitOS: libc++ is statically bundled in librusty_v8.a
+        // (use_custom_libcxx=true in GN), nothing extra to link.
       } else if target.contains("apple")
         || target.contains("freebsd")
         || target.contains("openbsd")
