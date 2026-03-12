@@ -22,6 +22,7 @@ fn main() {
   println!("cargo:rerun-if-changed=.gn");
   println!("cargo:rerun-if-changed=BUILD.gn");
   println!("cargo:rerun-if-changed=src/binding.cc");
+  println!("cargo:rerun-if-changed=patches");
 
   // These are all the environment variables that we check. This is
   // probably more than what is needed, but missing an important
@@ -198,7 +199,7 @@ fn build_binding() {
     let sdk_path = String::from_utf8(output.stdout).unwrap();
     clang_args.push("-isysroot".to_string());
     clang_args.push(sdk_path.trim().to_string());
-  } else if target_os == "linux" {
+  } else if target_os == "linux" || target_os == "hermit" {
     // Add clang resource directory for builtin headers (stddef.h, etc)
     if let Ok(libclang_path) = env::var("LIBCLANG_PATH") {
       let clang_dir = PathBuf::from(&libclang_path)
@@ -212,6 +213,14 @@ fn build_binding() {
         let resource_dir = String::from_utf8(output.stdout).unwrap();
         clang_args.push(format!("-isystem{}/include", resource_dir.trim()));
       }
+    }
+    if target_os == "hermit" {
+      // HermitOS cross-compilation: the host clang's default target is
+      // x86_64-linux-gnu but the multiarch include path for glibc headers
+      // (bits/libc-header-start.h etc.) isn't automatically added.
+      // Bindgen only needs these for basic C types used by libc++.
+      clang_args
+        .push("-isystem/usr/include/x86_64-linux-gnu".to_string());
     }
   }
 
@@ -254,11 +263,21 @@ fn build_v8(is_asan: bool) {
 
   download_rust_toolchain();
 
+  let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+
+  // Apply hermit patches to submodules before configuring GN
+  if target_os == "hermit" {
+    apply_patches("v8", &["patches/v8/0001-add-hermitos-platform-support.patch"]);
+    apply_patches(
+      "build",
+      &["patches/build/0001-add-hermitos-as-supported-target-os.patch"],
+    );
+  }
+
   // `#[cfg(...)]` attributes don't work as expected from build.rs -- they refer to the configuration
   // of the host system which the build.rs script will be running on. In short, `cfg!(target_<os/arch>)`
   // is actually the host os/arch instead of target os/arch while cross compiling. Instead, Environment variables
   // are the officially approach to get the target os/arch in build.rs.
-  let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
   let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
   // On windows, rustc cannot link with a V8 debug build.
   let mut gn_args = if is_debug() && target_os != "windows" {
@@ -426,6 +445,22 @@ fn build_v8(is_asan: bool) {
       "./third_party/catapult",
       &format!("{CHROMIUM_URI}/catapult.git"),
     );
+  }
+
+  if target_os == "hermit" {
+    gn_args.push(r#"target_os="hermit""#.to_string());
+    gn_args.push("treat_warnings_as_errors=false".to_string());
+    // HermitOS: enable WASM with explicit bounds checks (no signal-based trap handler)
+    gn_args.push("v8_enable_trap_handler=false".to_string());
+    gn_args.push("v8_enable_sandbox=false".to_string());
+    gn_args.push("use_sysroot=false".to_string());
+    gn_args.push("use_custom_libcxx=false".to_string());
+    // HermitOS is a tier 3 Rust target — no prebuilt std exists in any
+    // Rust distribution. Disable GN's Rust support for the target; the
+    // Rust side (including std) is built entirely by cargo -Zbuild-std.
+    gn_args.push("enable_rust=false".to_string());
+    // temporal_capi requires Rust/GN integration which is disabled above
+    gn_args.push("v8_enable_temporal_support=false".to_string());
   }
 
   if target_triple.starts_with("i686-") {
@@ -828,6 +863,8 @@ fn print_link_flags() {
       let target = env::var("TARGET").unwrap();
       if target.contains("msvc") {
         // nothing to link to
+      } else if target.contains("hermit") {
+        // HermitOS: no dynamic C++ stdlib to link
       } else if target.contains("apple")
         || target.contains("freebsd")
         || target.contains("openbsd")
@@ -1260,6 +1297,60 @@ pub fn parse_ninja_graph(s: &str) -> HashSet<String> {
     }
   }
   out
+}
+
+/// Apply a set of patch files to a submodule directory.
+///
+/// Each patch is applied with `git apply --check` first to see if it has
+/// already been applied (or if the patch is otherwise a no-op). Only patches
+/// that haven't been applied yet are actually applied.
+fn apply_patches(submodule: &str, patches: &[&str]) {
+  let root = env::var("CARGO_MANIFEST_DIR")
+    .map(PathBuf::from)
+    .unwrap();
+  let sub_dir = root.join(submodule);
+
+  for patch_rel in patches {
+    let patch_path = root.join(patch_rel);
+    assert!(
+      patch_path.exists(),
+      "Patch file not found: {}",
+      patch_path.display()
+    );
+
+    // Check if the patch has already been applied (reverse-apply check)
+    let already_applied = Command::new("git")
+      .arg("apply")
+      .arg("--reverse")
+      .arg("--check")
+      .arg(&patch_path)
+      .current_dir(&sub_dir)
+      .stdout(Stdio::null())
+      .stderr(Stdio::null())
+      .status()
+      .map(|s| s.success())
+      .unwrap_or(false);
+
+    if already_applied {
+      println!(
+        "cargo:warning=Patch already applied, skipping: {patch_rel}"
+      );
+      continue;
+    }
+
+    println!("cargo:warning=Applying patch: {patch_rel}");
+    let status = Command::new("git")
+      .arg("apply")
+      .arg(&patch_path)
+      .current_dir(&sub_dir)
+      .status()
+      .unwrap_or_else(|e| panic!("Failed to run git apply: {e}"));
+
+    assert!(
+      status.success(),
+      "Failed to apply patch: {patch_rel}"
+    );
+  }
 }
 
 fn env_bool(key: &str) -> bool {

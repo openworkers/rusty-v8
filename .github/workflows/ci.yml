@@ -44,6 +44,12 @@ jobs:
         #   windows-2025     - x64, 4 CPU, 16 GB RAM
         #   windows-11-arm   - arm64, 4 CPU, 16 GB RAM
         config:
+          # ===== HermitOS x86_64 (cross-compile, build only) =====
+          - os: ubuntu-22.04
+            target: x86_64-unknown-hermit
+            variant: release
+            features: none
+
           # ===== macOS ARM64 (main target: none, ptrcomp, sandbox) =====
           - os: macos-15-xlarge # use macos-15 for free (slower)
             target: aarch64-apple-darwin
@@ -199,6 +205,12 @@ jobs:
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/aarch64-linux-gnu-gcc-10" >> ${GITHUB_ENV}
           echo "QEMU_LD_PREFIX=/usr/aarch64-linux-gnu" >> ${GITHUB_ENV}
 
+      - name: Install HermitOS toolchain
+        if: matrix.config.target == 'x86_64-unknown-hermit'
+        run: |
+          rustup toolchain install nightly
+          rustup component add rust-src --toolchain nightly
+
       - name: Write git_submodule_status.txt
         run: git submodule status --recursive > git_submodule_status.txt
 
@@ -231,6 +243,7 @@ jobs:
                "aarch64-apple-darwin"      = "aarch64-apple-darwin"
                "x86_64-unknown-linux-gnu"  = "x86_64-unknown-linux-musl"
                "aarch64-unknown-linux-gnu" = "x86_64-unknown-linux-musl"
+               "x86_64-unknown-hermit"     = "x86_64-unknown-linux-musl"
                "x86_64-pc-windows-msvc"    = "x86_64-pc-windows-msvc"
                "aarch64-pc-windows-msvc"   = "x86_64-pc-windows-msvc"
              }['${{ matrix.config.target }}']
@@ -273,13 +286,23 @@ jobs:
       - name: Test
         if: >-
           matrix.config.target != 'aarch64-unknown-linux-gnu' &&
-          matrix.config.target != 'aarch64-pc-windows-msvc'
+          matrix.config.target != 'aarch64-pc-windows-msvc' &&
+          matrix.config.target != 'x86_64-unknown-hermit'
         env:
           SCCACHE_IDLE_TIMEOUT: 0
         run:
           cargo nextest run --all-targets --locked --target ${{
           matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }} ${{
           env.CARGO_FEATURE_FLAGS }}
+
+      - name: Build (HermitOS cross-compile)
+        if: matrix.config.target == 'x86_64-unknown-hermit'
+        env:
+          SCCACHE_IDLE_TIMEOUT: 0
+        run:
+          cargo +nightly build --locked --target ${{ matrix.config.target
+          }} ${{ env.CARGO_VARIANT_FLAG }} ${{ env.CARGO_FEATURE_FLAGS
+          }} -Zbuild-std=std,panic_abort
 
       - name: Build (cross-compile, no tests)
         if: >-
@@ -292,6 +315,7 @@ jobs:
           }} ${{ env.CARGO_VARIANT_FLAG }} ${{ env.CARGO_FEATURE_FLAGS }}
 
       - name: Clippy
+        if: matrix.config.target != 'x86_64-unknown-hermit'
         run:
           cargo clippy --all-targets --locked --target ${{ matrix.config.target
           }} ${{ env.CARGO_VARIANT_FLAG }} ${{ env.CARGO_FEATURE_FLAGS }} -- -D
