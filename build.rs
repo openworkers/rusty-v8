@@ -453,6 +453,10 @@ fn build_v8(is_asan: bool) {
     // HermitOS: enable WASM with explicit bounds checks (no signal-based trap handler)
     gn_args.push("v8_enable_trap_handler=false".to_string());
     gn_args.push("v8_enable_sandbox=false".to_string());
+    // HermitOS: disable cppgc caged heap — it requires a 48 GB virtual memory
+    // reservation for pointer compression alignment, which is impossible on a
+    // unikernel without demand paging.
+    gn_args.push("cppgc_enable_caged_heap=false".to_string());
     gn_args.push("use_sysroot=false".to_string());
     // HermitOS: use V8's bundled libc++ (statically linked into librusty_v8.a)
     // so consumers don't need to provide a separate C++ stdlib for Hermit.
