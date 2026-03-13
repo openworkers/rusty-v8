@@ -40,6 +40,7 @@ fn main() {
     "OUT_DIR",
     "RUSTY_V8_ARCHIVE",
     "RUSTY_V8_MIRROR",
+    "RUSTY_V8_REUSE_PREBUILT",
     "RUSTY_V8_SRC_BINDING_PATH",
     "SCCACHE",
     "V8_FORCE_DEBUG",
@@ -717,7 +718,20 @@ fn download_static_lib_binaries() {
   fs::create_dir_all(&dir).unwrap();
   println!("cargo:rustc-link-search={}", dir.display());
 
-  download_file(&url, &static_lib_path());
+  let lib_path = static_lib_path();
+
+  // If RUSTY_V8_REUSE_PREBUILT is set and the library already exists,
+  // skip the download. This is useful when only Rust code changed but
+  // V8 itself hasn't changed (e.g., version bump without V8 update).
+  if env::var("RUSTY_V8_REUSE_PREBUILT").is_ok() && lib_path.exists() {
+    println!(
+      "cargo:warning=Reusing existing prebuilt V8 library at {}",
+      lib_path.display()
+    );
+    return;
+  }
+
+  download_file(&url, &lib_path);
 }
 
 fn decompress_to_writer<R, W>(input: &mut R, output: &mut W) -> io::Result<()>
@@ -854,6 +868,37 @@ fn print_prebuilt_src_binding_path() {
   let name = format!("src_binding{features}_{profile}_{target}.rs");
 
   let src_binding_path = get_dirs().root.join("gen").join(name.clone());
+
+  // If RUSTY_V8_REUSE_PREBUILT is set, look for any existing binding file
+  // in the gen directory (ignoring version in path).
+  if env::var("RUSTY_V8_REUSE_PREBUILT").is_ok() {
+    let gen_dir = get_dirs().root.join("gen");
+
+    if let Ok(entries) = fs::read_dir(&gen_dir) {
+      for entry in entries.flatten() {
+        let path = entry.path();
+
+        if let Some(filename) = path.file_name().and_then(|f| f.to_str()) {
+          // Match pattern: src_binding{features}_{profile}_{target}.rs
+          if filename.starts_with("src_binding")
+            && filename.ends_with(".rs")
+            && filename.contains(&format!("_{profile}_"))
+            && filename.contains(&target)
+          {
+            println!(
+              "cargo:warning=Reusing existing binding file at {}",
+              path.display()
+            );
+            println!(
+              "cargo:rustc-env=RUSTY_V8_SRC_BINDING_PATH={}",
+              path.display()
+            );
+            return;
+          }
+        }
+      }
+    }
+  }
 
   if let Ok(base) = env::var("RUSTY_V8_MIRROR") {
     let version = env::var("CARGO_PKG_VERSION").unwrap();
