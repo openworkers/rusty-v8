@@ -2,128 +2,108 @@ name: ci
 
 on:
   push:
-    branches: [main]
     tags: ["**"]
   pull_request:
     branches: [main]
-    types: [labeled, opened, synchronize, reopened]
+  workflow_dispatch:
 
 permissions: write-all
 
 jobs:
   build:
-    name: ${{ matrix.config.variant }} ${{ matrix.config.target }} ${{ matrix.config.v8_enable_pointer_compression && 'ptrcomp' || '' }}
+    name: ${{ matrix.config.variant }} ${{ matrix.config.target }} ${{ matrix.config.features }}
     runs-on: ${{ matrix.config.os }}
     timeout-minutes: 180
     strategy:
-      # Always run main branch builds to completion. This allows the cache to
-      # stay mostly up-to-date in situations where a single job fails due to
-      # e.g. a flaky test.
-      # Don't fast-fail on tag build because publishing binaries shouldn't be
-      # prevented if 'cargo publish' fails (which can be a false negative).
       fail-fast:
         ${{ (github.event_name == 'pull_request' || (github.ref !=
         'refs/heads/main' && !startsWith(github.ref, 'refs/tags/'))) &&
         !contains(github.event.pull_request.labels.*.name, 'no-fail-fast') }}
       matrix:
         config:
-          - os: macos-15-large
-            target: x86_64-apple-darwin
-            variant: debug
-            v8_enable_pointer_compression: false
-            cargo: cargo
-
-          - os: macos-15-large
-            target: x86_64-apple-darwin
-            variant: release
-            v8_enable_pointer_compression: false
-            cargo: cargo
-
-          - os: macos-15-large
-            target: x86_64-apple-darwin
-            variant: debug
-            v8_enable_pointer_compression: true
-            cargo: cargo
-
-          - os: macos-15-large
-            target: x86_64-apple-darwin
-            variant: release
-            v8_enable_pointer_compression: true
-            cargo: cargo
-
+          # ===== macOS ARM64 (none, ptrcomp, sandbox) =====
           - os: macos-15
             target: aarch64-apple-darwin
             variant: debug
-            v8_enable_pointer_compression: false
-            cargo: cargo
-
+            features: none
           - os: macos-15
             target: aarch64-apple-darwin
             variant: release
-            v8_enable_pointer_compression: false
-            cargo: cargo
-
+            features: none
           - os: macos-15
             target: aarch64-apple-darwin
             variant: debug
-            v8_enable_pointer_compression: true
-            cargo: cargo
-
+            features: ptrcomp
           - os: macos-15
             target: aarch64-apple-darwin
             variant: release
-            v8_enable_pointer_compression: true
-            cargo: cargo
+            features: ptrcomp
+          - os: macos-15
+            target: aarch64-apple-darwin
+            variant: debug
+            features: sandbox
+          - os: macos-15
+            target: aarch64-apple-darwin
+            variant: release
+            features: sandbox
 
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+          # ===== Linux x86_64 (none, ptrcomp, sandbox) =====
+          - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             variant: debug
-            v8_enable_pointer_compression: false
-            cargo: cargo
-
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+            features: none
+          - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             variant: release
-            v8_enable_pointer_compression: false
-            cargo: cargo
-
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+            features: none
+          - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             variant: debug
-            v8_enable_pointer_compression: true
-            cargo: cargo
-
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+            features: ptrcomp
+          - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             variant: release
-            v8_enable_pointer_compression: true
-            cargo: cargo
+            features: ptrcomp
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            variant: debug
+            features: sandbox
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            variant: release
+            features: sandbox
 
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'windows-2022-xxl' || 'windows-2022' }}
+          # ===== macOS x86_64 (none only) =====
+          - os: macos-15-large
+            target: x86_64-apple-darwin
+            variant: debug
+            features: none
+          - os: macos-15-large
+            target: x86_64-apple-darwin
+            variant: release
+            features: none
+
+          # ===== Linux ARM64 cross-compile (none only) =====
+          - os: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+            variant: debug
+            features: none
+          - os: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+            variant: release
+            features: none
+
+          # ===== Windows x86_64 (none, release only) =====
+          - os: windows-2022
             target: x86_64-pc-windows-msvc
-            variant: release # Note: we do not support windows debug builds.
-            v8_enable_pointer_compression: false
-            cargo: cargo
-
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
-            target: aarch64-unknown-linux-gnu
-            variant: debug
-            v8_enable_pointer_compression: false
-            cargo: cargo
-
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
-            target: aarch64-unknown-linux-gnu
             variant: release
-            v8_enable_pointer_compression: false
-            cargo: cargo
+            features: none
 
     env:
       V8_FROM_SOURCE: true
       CARGO_VARIANT_FLAG: ${{ matrix.config.variant == 'release' && '--release' || '' }}
-      CARGO_FEATURE_FLAGS: ${{ matrix.config.v8_enable_pointer_compression && '--features v8_enable_pointer_compression' || '' }}
       LIB_NAME: ${{ contains(matrix.config.target, 'windows') && 'rusty_v8' || 'librusty_v8' }}
       LIB_EXT: ${{ contains(matrix.config.target, 'windows') && 'lib' || 'a' }}
-      FEATURES_SUFFIX: ${{ matrix.config.v8_enable_pointer_compression && '_ptrcomp' || '' }}
       RUSTFLAGS: -D warnings
 
     steps:
@@ -153,6 +133,20 @@ jobs:
           python-version: 3.11.x
           architecture: x64
 
+      - name: Set cargo feature flags
+        shell: bash
+        run: |
+          if [ "${{ matrix.config.features }}" = "sandbox" ]; then
+            echo "CARGO_FEATURE_FLAGS=--features v8_enable_sandbox" >> $GITHUB_ENV
+            echo "FEATURES_SUFFIX=_sandbox" >> $GITHUB_ENV
+          elif [ "${{ matrix.config.features }}" = "ptrcomp" ]; then
+            echo "CARGO_FEATURE_FLAGS=--features v8_enable_pointer_compression" >> $GITHUB_ENV
+            echo "FEATURES_SUFFIX=_ptrcomp" >> $GITHUB_ENV
+          else
+            echo "CARGO_FEATURE_FLAGS=" >> $GITHUB_ENV
+            echo "FEATURES_SUFFIX=" >> $GITHUB_ENV
+          fi
+
       - name: Install cross compilation toolchain
         if: matrix.config.target == 'aarch64-unknown-linux-gnu'
         run: |
@@ -176,19 +170,13 @@ jobs:
       - name: Cache
         uses: actions/cache@v4
         with:
-          # Note: rusty_v8 targets always get get rebuilt, and their outputs
-          # ('librusty_v8.rlib', the whole 'gn_out' directory, etc.) can be
-          # quite big, so we cache only those subdirectories of
-          # target/{debug|release} that contain the build output for crates that
-          # come from the registry. By additionally saving the sccache cache
-          # directory it's still possible to build v8 fast.
           path: |-
             target/sccache
             target/*/.*
             target/*/build
             target/*/deps
-          key: cargo1-${{ matrix.config.target }}-${{ matrix.config.variant }}-${{ matrix.config.v8_enable_pointer_compression }}-${{ hashFiles('Cargo.lock', 'build.rs', 'git_submodule_status.txt') }}
-          restore-keys: cargo1-${{ matrix.config.target }}-${{ matrix.config.variant }}-${{ matrix.config.v8_enable_pointer_compression }}-
+          key: cargo1-${{ matrix.config.target }}-${{ matrix.config.variant }}-${{ matrix.config.features }}-${{ hashFiles('Cargo.lock', 'build.rs', 'git_submodule_status.txt') }}
+          restore-keys: cargo1-${{ matrix.config.target }}-${{ matrix.config.variant }}-${{ matrix.config.features }}-
 
       - name: Install and start sccache
         shell: pwsh
@@ -234,27 +222,31 @@ jobs:
       - name: Test
         env:
           SCCACHE_IDLE_TIMEOUT: 0
-        if: matrix.config.variant == 'debug' || matrix.config.variant == 'release'
-        run: ${{ matrix.config.cargo }} nextest run -v --cargo-verbose --cargo-verbose --all-targets --locked --target ${{ matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }} ${{ env.CARGO_FEATURE_FLAGS }}
+        if: matrix.config.target != 'aarch64-unknown-linux-gnu'
+        run: cargo nextest run -v --cargo-verbose --cargo-verbose --all-targets --locked --target ${{ matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }} ${{ env.CARGO_FEATURE_FLAGS }}
+
+      - name: Build (cross-compile, no tests)
+        if: matrix.config.target == 'aarch64-unknown-linux-gnu'
+        env:
+          SCCACHE_IDLE_TIMEOUT: 0
+        run: cargo build --all-targets --locked --target ${{ matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }} ${{ env.CARGO_FEATURE_FLAGS }}
 
       - name: Clippy
-        run: ${{ matrix.config.cargo }} clippy --all-targets --locked --target ${{ matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }} ${{ env.CARGO_FEATURE_FLAGS }} -- -D clippy::all
+        run: cargo clippy --all-targets --locked --target ${{ matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }} ${{ env.CARGO_FEATURE_FLAGS }} -- -D clippy::all
 
       - name: Prepare binary publish
-        if: matrix.config.variant == 'debug' || matrix.config.variant == 'release'
         run: |
           gzip -9c target/${{ matrix.config.target }}/${{ matrix.config.variant }}/gn_out/obj/${{ env.LIB_NAME }}.${{ env.LIB_EXT }} > target/${{ env.LIB_NAME }}${{ env.FEATURES_SUFFIX }}_${{ matrix.config.variant }}_${{ matrix.config.target }}.${{ env.LIB_EXT }}.gz
           ls -l target/${{ env.LIB_NAME }}${{ env.FEATURES_SUFFIX }}_${{ matrix.config.variant }}_${{ matrix.config.target }}.${{ env.LIB_EXT }}.gz
 
-          cp target/${{ matrix.config.target }}/${{ matrix.config.variant}}/gn_out/src_binding.rs target/src_binding${{ env.FEATURES_SUFFIX }}_${{ matrix.config.variant }}_${{ matrix.config.target }}.rs
+          cp target/${{ matrix.config.target }}/${{ matrix.config.variant }}/gn_out/src_binding.rs target/src_binding${{ env.FEATURES_SUFFIX }}_${{ matrix.config.variant }}_${{ matrix.config.target }}.rs
           ls -l target/src_binding${{ env.FEATURES_SUFFIX }}_${{ matrix.config.variant }}_${{ matrix.config.target }}.rs
 
       - name: Binary publish
         uses: softprops/action-gh-release@v0.1.15
         if: >-
-          github.repository == 'denoland/rusty_v8' &&
-          startsWith(github.ref, 'refs/tags/') &&
-          (matrix.config.variant == 'debug' || matrix.config.variant == 'release')
+          github.repository == 'openworkers/rusty-v8' &&
+          startsWith(github.ref, 'refs/tags/')
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -293,7 +285,9 @@ jobs:
         uses: cargo-bins/cargo-binstall@main
 
       - name: Install nextest
-        run: cargo binstall cargo-nextest --secure --locked
+        run: cargo binstall cargo-nextest --secure --locked --no-confirm
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install python
         uses: actions/setup-python@v5
@@ -312,8 +306,8 @@ jobs:
             target/*/.*
             target/*/build
             target/*/deps
-          key: cargo1-aarch64-apple-darwin-asan-false-${{ hashFiles('Cargo.lock', 'build.rs', 'git_submodule_status.txt') }}
-          restore-keys: cargo1-aarch64-apple-darwin-asan-false-
+          key: cargo1-aarch64-apple-darwin-asan-${{ hashFiles('Cargo.lock', 'build.rs', 'git_submodule_status.txt') }}
+          restore-keys: cargo1-aarch64-apple-darwin-asan-
 
       - name: Install and start sccache
         shell: pwsh
@@ -338,17 +332,15 @@ jobs:
       - name: Test (ASAN)
         env:
           SCCACHE_IDLE_TIMEOUT: 0
-        # https://github.com/rust-lang/rust/issues/87215
         run: |
           rustup component add rust-src --toolchain nightly-aarch64-apple-darwin
-          # Is there a better way to install this tool?
           curl -O http://commondatastorage.googleapis.com/chromium-browser-clang-staging/Mac/dsymutil-llvmorg-17-init-19076-g5533fc10-1.tgz
           tar -C tools/clang/dsymutil/ -xvzf dsymutil-llvmorg-17-init-19076-g5533fc10-1.tgz
           V8_FROM_SOURCE=true RUSTFLAGS="-C opt-level=1 -Zsanitizer=address" cargo +nightly -Z build-std nextest run --lib --bins --tests -v --cargo-verbose --cargo-verbose --target aarch64-apple-darwin
 
   build-windows-arm64:
     name: release aarch64-pc-windows-msvc
-    runs-on: ${{ github.repository == 'denoland/rusty_v8' && 'windows-2022-xxl' || 'windows-2022' }}
+    runs-on: windows-2022
     timeout-minutes: 180
     env:
       CARGO_VARIANT_FLAG: --release
@@ -357,6 +349,7 @@ jobs:
       LIB_NAME: rusty_v8
       LIB_EXT: lib
       FEATURES_SUFFIX: ''
+
     steps:
       - name: Configure git
         run: git config --global core.symlinks true
@@ -384,8 +377,8 @@ jobs:
           path: |-
             target/sccache
             target/aarch64-pc-windows-msvc/release/gn_out
-          key: cargo1-aarch64-pc-windows-msvc-release-false-${{ hashFiles('Cargo.lock', 'build.rs', 'git_submodule_status.txt') }}
-          restore-keys: cargo1-aarch64-pc-windows-msvc-release-false-
+          key: cargo1-aarch64-pc-windows-msvc-release-${{ hashFiles('Cargo.lock', 'build.rs', 'git_submodule_status.txt') }}
+          restore-keys: cargo1-aarch64-pc-windows-msvc-release-
 
       - name: Install and start sccache
         shell: pwsh
@@ -425,7 +418,9 @@ jobs:
 
       - name: Binary publish
         uses: softprops/action-gh-release@v0.1.15
-        if: github.repository == 'denoland/rusty_v8' && startsWith(github.ref, 'refs/tags/')
+        if: >-
+          github.repository == 'openworkers/rusty-v8' &&
+          startsWith(github.ref, 'refs/tags/')
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -439,50 +434,12 @@ jobs:
           name: src_binding_release_aarch64-pc-windows-msvc.rs
           path: target/src_binding_release_aarch64-pc-windows-msvc.rs
 
-      - name: Upload prebuilt library for testing
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-arm64-prebuilt-release
-          path: |
-            target/rusty_v8_release_aarch64-pc-windows-msvc.lib.gz
-            target/src_binding_release_aarch64-pc-windows-msvc.rs
-          retention-days: 1
-
-  test-windows-arm64:
-    name: test aarch64-pc-windows-msvc
-    needs: build-windows-arm64
-    runs-on: ${{ github.repository == 'denoland/rusty_v8' && 'windows-11-arm-xl' || 'windows-11-arm' }}
-    timeout-minutes: 60
-    steps:
-      - name: Configure git
-        run: git config --global core.symlinks true
-
-      - name: Clone repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 10
-          submodules: recursive
-
-      - uses: dsherret/rust-toolchain-file@v1
-
-      - name: Install nextest
-        uses: taiki-e/install-action@nextest
-
-      - name: Download prebuilt library
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-arm64-prebuilt-release
-
-      - name: Run tests with prebuilt library
-        env:
-          RUSTY_V8_ARCHIVE: ${{ github.workspace }}/rusty_v8_release_aarch64-pc-windows-msvc.lib.gz
-          RUSTY_V8_SRC_BINDING_PATH: ${{ github.workspace }}/src_binding_release_aarch64-pc-windows-msvc.rs
-        run: cargo nextest run -v --all-targets --locked --target aarch64-pc-windows-msvc --release --no-fail-fast
-
   publish:
     needs: [build, build-windows-arm64]
-    runs-on: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
-    if: github.repository == 'denoland/rusty_v8' && startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-22.04
+    if: >-
+      github.repository == 'openworkers/rusty-v8' &&
+      startsWith(github.ref, 'refs/tags/')
     steps:
       - name: Configure git
         run: git config --global core.symlinks true
@@ -491,7 +448,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 10
-          submodules: recursive
+          submodules: false
 
       - name: Install rust
         uses: dsherret/rust-toolchain-file@v1
