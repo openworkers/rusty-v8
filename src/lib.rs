@@ -114,7 +114,6 @@ pub use isolate::HostImportModuleWithPhaseDynamicallyCallback;
 pub use isolate::HostInitializeImportMetaObjectCallback;
 pub use isolate::Isolate;
 pub use isolate::IsolateHandle;
-pub use isolate::IsolateScope;
 pub use isolate::Locker;
 pub use isolate::MemoryPressureLevel;
 pub use isolate::MessageCallback;
