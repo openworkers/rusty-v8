@@ -83,7 +83,7 @@ jobs:
             variant: release
             features: none
 
-          # ===== Linux ARM64 cross-compile (none only) =====
+          # ===== Linux ARM64 cross-compile (none, ptrcomp, sandbox) =====
           - os: ubuntu-22.04
             target: aarch64-unknown-linux-gnu
             variant: debug
@@ -92,12 +92,29 @@ jobs:
             target: aarch64-unknown-linux-gnu
             variant: release
             features: none
+          - os: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+            variant: debug
+            features: ptrcomp
+          - os: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+            variant: release
+            features: ptrcomp
+          - os: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+            variant: debug
+            features: sandbox
+          - os: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+            variant: release
+            features: sandbox
 
           # ===== Windows x86_64 (none, release only) =====
           - os: windows-2022
             target: x86_64-pc-windows-msvc
             variant: release
             features: none
+
 
     env:
       V8_FROM_SOURCE: true
@@ -220,9 +237,9 @@ jobs:
           clang-format-19 --verbose --Werror --dry-run src/*.cc src/*.hpp src/*.h
 
       - name: Test
+        if: matrix.config.target != 'aarch64-unknown-linux-gnu'
         env:
           SCCACHE_IDLE_TIMEOUT: 0
-        if: matrix.config.target != 'aarch64-unknown-linux-gnu'
         run: cargo nextest run -v --cargo-verbose --cargo-verbose --all-targets --locked --target ${{ matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }} ${{ env.CARGO_FEATURE_FLAGS }}
 
       - name: Build (cross-compile, no tests)
