@@ -115,7 +115,6 @@ jobs:
             variant: release
             features: none
 
-
     env:
       V8_FROM_SOURCE: true
       CARGO_VARIANT_FLAG: ${{ matrix.config.variant == 'release' && '--release' || '' }}
@@ -154,13 +153,13 @@ jobs:
         shell: bash
         run: |
           if [ "${{ matrix.config.features }}" = "sandbox" ]; then
-            echo "CARGO_FEATURE_FLAGS=--features v8_enable_sandbox" >> $GITHUB_ENV
+            echo "CARGO_FEATURE_FLAGS=--features v8_enable_sandbox --features simdutf" >> $GITHUB_ENV
             echo "FEATURES_SUFFIX=_sandbox" >> $GITHUB_ENV
           elif [ "${{ matrix.config.features }}" = "ptrcomp" ]; then
-            echo "CARGO_FEATURE_FLAGS=--features v8_enable_pointer_compression" >> $GITHUB_ENV
+            echo "CARGO_FEATURE_FLAGS=--features v8_enable_pointer_compression --features simdutf" >> $GITHUB_ENV
             echo "FEATURES_SUFFIX=_ptrcomp" >> $GITHUB_ENV
           else
-            echo "CARGO_FEATURE_FLAGS=" >> $GITHUB_ENV
+            echo "CARGO_FEATURE_FLAGS=--features simdutf" >> $GITHUB_ENV
             echo "FEATURES_SUFFIX=" >> $GITHUB_ENV
           fi
 

@@ -1,6 +1,6 @@
 [package]
 name = "openworkers-v8"
-version = "146.5.2"
+version = "146.8.0"
 description = "Rust bindings to V8 (fork with Locker/UnenteredIsolate support for isolate pooling)"
 readme = "README.md"
 authors = ["the Deno authors", "OpenWorkers Authors <contact@openworkers.dev>"]
@@ -105,6 +105,7 @@ opt-level = 1
 [features]
 default = ["use_custom_libcxx"]
 use_custom_libcxx = []
+simdutf = []
 v8_enable_pointer_compression = []
 v8_enable_sandbox = ["v8_enable_pointer_compression"]
 v8_enable_v8_checks = []

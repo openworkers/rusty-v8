@@ -1247,7 +1247,7 @@ class ExternalOneByteString : public v8::String::ExternalOneByteStringResource {
   ~ExternalOneByteString() override {
     (*rustDestroy_)(data_, length_);
     isolate_->AdjustAmountOfExternalAllocatedMemory(
-        -static_cast<int64_t>(-length_));
+        -static_cast<int64_t>(length_));
   }
 
   const char* data() const override { return data_; }
@@ -3027,22 +3027,40 @@ v8::StartupData v8__SnapshotCreator__CreateBlob(
 // Rust-side callbacks for trait-based CustomPlatform (PlatformImpl trait).
 // Each callback corresponds to a C++ virtual method on TaskRunner or Platform.
 // `context` is a pointer to the Rust Box<dyn PlatformImpl>.
+// Task ownership is transferred to Rust — Rust is responsible for calling
+// Run() and deleting the task.
 extern "C" {
-void v8__Platform__CustomPlatform__BASE__PostTask(void* context, void* isolate);
+void v8__Platform__CustomPlatform__BASE__PostTask(void* context, void* isolate,
+                                                  v8::Task* task);
 void v8__Platform__CustomPlatform__BASE__PostNonNestableTask(void* context,
-                                                             void* isolate);
+                                                             void* isolate,
+                                                             v8::Task* task);
 void v8__Platform__CustomPlatform__BASE__PostDelayedTask(
-    void* context, void* isolate, double delay_in_seconds);
+    void* context, void* isolate, v8::Task* task, double delay_in_seconds);
 void v8__Platform__CustomPlatform__BASE__PostNonNestableDelayedTask(
-    void* context, void* isolate, double delay_in_seconds);
+    void* context, void* isolate, v8::Task* task, double delay_in_seconds);
 void v8__Platform__CustomPlatform__BASE__PostIdleTask(void* context,
-                                                      void* isolate);
+                                                      void* isolate,
+                                                      v8::IdleTask* task);
 void v8__Platform__CustomPlatform__BASE__DROP(void* context);
 }
 
-// TaskRunner wrapper that intercepts all PostTask* virtual methods, forwards
-// tasks to the default platform's queue, and notifies Rust via the
-// corresponding PlatformImpl trait method.
+// FFI functions for running and deleting V8 tasks from Rust.
+extern "C" {
+void v8__Task__Run(v8::Task* task) { task->Run(); }
+void v8__Task__DELETE(v8::Task* task) { delete task; }
+void v8__IdleTask__Run(v8::IdleTask* task, double deadline_in_seconds) {
+  task->Run(deadline_in_seconds);
+}
+void v8__IdleTask__DELETE(v8::IdleTask* task) { delete task; }
+}
+
+// TaskRunner wrapper that intercepts all PostTask* virtual methods and
+// transfers task ownership to Rust via the PlatformImpl trait. The Rust
+// side is responsible for scheduling and calling task->Run().
+//
+// The wrapped runner is kept for capability queries (IdleTasksEnabled, etc.)
+// but tasks are NOT forwarded to it — Rust owns them entirely.
 class CustomTaskRunner final : public v8::TaskRunner {
  public:
   CustomTaskRunner(std::shared_ptr<v8::TaskRunner> wrapped, void* context,
@@ -3060,38 +3078,32 @@ class CustomTaskRunner final : public v8::TaskRunner {
  protected:
   void PostTaskImpl(std::unique_ptr<v8::Task> task,
                     const v8::SourceLocation& location) override {
-    wrapped_->PostTask(std::move(task), location);
-    v8__Platform__CustomPlatform__BASE__PostTask(context_,
-                                                 static_cast<void*>(isolate_));
+    v8__Platform__CustomPlatform__BASE__PostTask(
+        context_, static_cast<void*>(isolate_), task.release());
   }
   void PostNonNestableTaskImpl(std::unique_ptr<v8::Task> task,
                                const v8::SourceLocation& location) override {
-    wrapped_->PostNonNestableTask(std::move(task), location);
     v8__Platform__CustomPlatform__BASE__PostNonNestableTask(
-        context_, static_cast<void*>(isolate_));
+        context_, static_cast<void*>(isolate_), task.release());
   }
   void PostDelayedTaskImpl(std::unique_ptr<v8::Task> task,
                            double delay_in_seconds,
                            const v8::SourceLocation& location) override {
-    wrapped_->PostDelayedTask(std::move(task), delay_in_seconds, location);
     v8__Platform__CustomPlatform__BASE__PostDelayedTask(
-        context_, static_cast<void*>(isolate_),
+        context_, static_cast<void*>(isolate_), task.release(),
         delay_in_seconds > 0 ? delay_in_seconds : 0.0);
   }
   void PostNonNestableDelayedTaskImpl(
       std::unique_ptr<v8::Task> task, double delay_in_seconds,
       const v8::SourceLocation& location) override {
-    wrapped_->PostNonNestableDelayedTask(std::move(task), delay_in_seconds,
-                                         location);
     v8__Platform__CustomPlatform__BASE__PostNonNestableDelayedTask(
-        context_, static_cast<void*>(isolate_),
+        context_, static_cast<void*>(isolate_), task.release(),
         delay_in_seconds > 0 ? delay_in_seconds : 0.0);
   }
   void PostIdleTaskImpl(std::unique_ptr<v8::IdleTask> task,
                         const v8::SourceLocation& location) override {
-    wrapped_->PostIdleTask(std::move(task), location);
     v8__Platform__CustomPlatform__BASE__PostIdleTask(
-        context_, static_cast<void*>(isolate_));
+        context_, static_cast<void*>(isolate_), task.release());
   }
 
  private:
@@ -4422,3 +4434,252 @@ RustObj* cppgc__WeakPersistent__Get(cppgc::WeakPersistent<RustObj>* self) {
 }
 
 }  // extern "C"
+
+// =============================================================================
+// simdutf bindings (gated behind RUSTY_V8_ENABLE_SIMDUTF)
+// =============================================================================
+
+#ifdef RUSTY_V8_ENABLE_SIMDUTF
+#include "third_party/simdutf/simdutf.h"
+
+struct simdutf__result {
+  int error;
+  size_t count;
+};
+
+static simdutf__result to_ffi_result(simdutf::result r) {
+  return {static_cast<int>(r.error), r.count};
+}
+
+extern "C" {
+
+// --- Validation ---
+
+bool simdutf__validate_utf8(const char* buf, size_t len) {
+  return simdutf::validate_utf8(buf, len);
+}
+
+simdutf__result simdutf__validate_utf8_with_errors(const char* buf,
+                                                   size_t len) {
+  return to_ffi_result(simdutf::validate_utf8_with_errors(buf, len));
+}
+
+bool simdutf__validate_ascii(const char* buf, size_t len) {
+  return simdutf::validate_ascii(buf, len);
+}
+
+simdutf__result simdutf__validate_ascii_with_errors(const char* buf,
+                                                    size_t len) {
+  return to_ffi_result(simdutf::validate_ascii_with_errors(buf, len));
+}
+
+bool simdutf__validate_utf16le(const char16_t* buf, size_t len) {
+  return simdutf::validate_utf16le(buf, len);
+}
+
+simdutf__result simdutf__validate_utf16le_with_errors(const char16_t* buf,
+                                                      size_t len) {
+  return to_ffi_result(simdutf::validate_utf16le_with_errors(buf, len));
+}
+
+bool simdutf__validate_utf16be(const char16_t* buf, size_t len) {
+  return simdutf::validate_utf16be(buf, len);
+}
+
+simdutf__result simdutf__validate_utf16be_with_errors(const char16_t* buf,
+                                                      size_t len) {
+  return to_ffi_result(simdutf::validate_utf16be_with_errors(buf, len));
+}
+
+bool simdutf__validate_utf32(const char32_t* buf, size_t len) {
+  return simdutf::validate_utf32(buf, len);
+}
+
+simdutf__result simdutf__validate_utf32_with_errors(const char32_t* buf,
+                                                    size_t len) {
+  return to_ffi_result(simdutf::validate_utf32_with_errors(buf, len));
+}
+
+// --- Conversion: UTF-8 <-> UTF-16LE ---
+
+size_t simdutf__convert_utf8_to_utf16le(const char* input, size_t length,
+                                        char16_t* output) {
+  return simdutf::convert_utf8_to_utf16le(input, length, output);
+}
+
+simdutf__result simdutf__convert_utf8_to_utf16le_with_errors(const char* input,
+                                                             size_t length,
+                                                             char16_t* output) {
+  return to_ffi_result(
+      simdutf::convert_utf8_to_utf16le_with_errors(input, length, output));
+}
+
+size_t simdutf__convert_valid_utf8_to_utf16le(const char* input, size_t length,
+                                              char16_t* output) {
+  return simdutf::convert_valid_utf8_to_utf16le(input, length, output);
+}
+
+size_t simdutf__convert_utf16le_to_utf8(const char16_t* input, size_t length,
+                                        char* output) {
+  return simdutf::convert_utf16le_to_utf8(input, length, output);
+}
+
+simdutf__result simdutf__convert_utf16le_to_utf8_with_errors(
+    const char16_t* input, size_t length, char* output) {
+  return to_ffi_result(
+      simdutf::convert_utf16le_to_utf8_with_errors(input, length, output));
+}
+
+size_t simdutf__convert_valid_utf16le_to_utf8(const char16_t* input,
+                                              size_t length, char* output) {
+  return simdutf::convert_valid_utf16le_to_utf8(input, length, output);
+}
+
+// --- Conversion: UTF-8 <-> UTF-16BE ---
+
+size_t simdutf__convert_utf8_to_utf16be(const char* input, size_t length,
+                                        char16_t* output) {
+  return simdutf::convert_utf8_to_utf16be(input, length, output);
+}
+
+size_t simdutf__convert_utf16be_to_utf8(const char16_t* input, size_t length,
+                                        char* output) {
+  return simdutf::convert_utf16be_to_utf8(input, length, output);
+}
+
+// --- Conversion: UTF-8 <-> Latin-1 ---
+
+size_t simdutf__convert_utf8_to_latin1(const char* input, size_t length,
+                                       char* output) {
+  return simdutf::convert_utf8_to_latin1(input, length, output);
+}
+
+simdutf__result simdutf__convert_utf8_to_latin1_with_errors(const char* input,
+                                                            size_t length,
+                                                            char* output) {
+  return to_ffi_result(
+      simdutf::convert_utf8_to_latin1_with_errors(input, length, output));
+}
+
+size_t simdutf__convert_valid_utf8_to_latin1(const char* input, size_t length,
+                                             char* output) {
+  return simdutf::convert_valid_utf8_to_latin1(input, length, output);
+}
+
+size_t simdutf__convert_latin1_to_utf8(const char* input, size_t length,
+                                       char* output) {
+  return simdutf::convert_latin1_to_utf8(input, length, output);
+}
+
+// --- Conversion: Latin-1 <-> UTF-16LE ---
+
+size_t simdutf__convert_latin1_to_utf16le(const char* input, size_t length,
+                                          char16_t* output) {
+  return simdutf::convert_latin1_to_utf16le(input, length, output);
+}
+
+size_t simdutf__convert_utf16le_to_latin1(const char16_t* input, size_t length,
+                                          char* output) {
+  return simdutf::convert_utf16le_to_latin1(input, length, output);
+}
+
+// --- Conversion: UTF-8 <-> UTF-32 ---
+
+size_t simdutf__convert_utf8_to_utf32(const char* input, size_t length,
+                                      char32_t* output) {
+  return simdutf::convert_utf8_to_utf32(input, length, output);
+}
+
+size_t simdutf__convert_utf32_to_utf8(const char32_t* input, size_t length,
+                                      char* output) {
+  return simdutf::convert_utf32_to_utf8(input, length, output);
+}
+
+// --- Length calculation ---
+
+size_t simdutf__utf8_length_from_utf16le(const char16_t* input, size_t length) {
+  return simdutf::utf8_length_from_utf16le(input, length);
+}
+
+size_t simdutf__utf8_length_from_utf16be(const char16_t* input, size_t length) {
+  return simdutf::utf8_length_from_utf16be(input, length);
+}
+
+size_t simdutf__utf16_length_from_utf8(const char* input, size_t length) {
+  return simdutf::utf16_length_from_utf8(input, length);
+}
+
+size_t simdutf__utf8_length_from_latin1(const char* input, size_t length) {
+  return simdutf::utf8_length_from_latin1(input, length);
+}
+
+size_t simdutf__latin1_length_from_utf8(const char* input, size_t length) {
+  return simdutf::latin1_length_from_utf8(input, length);
+}
+
+size_t simdutf__utf32_length_from_utf8(const char* input, size_t length) {
+  return simdutf::utf32_length_from_utf8(input, length);
+}
+
+size_t simdutf__utf8_length_from_utf32(const char32_t* input, size_t length) {
+  return simdutf::utf8_length_from_utf32(input, length);
+}
+
+size_t simdutf__utf16_length_from_utf32(const char32_t* input, size_t length) {
+  return simdutf::utf16_length_from_utf32(input, length);
+}
+
+size_t simdutf__utf32_length_from_utf16le(const char16_t* input,
+                                          size_t length) {
+  return simdutf::utf32_length_from_utf16le(input, length);
+}
+
+// --- Counting ---
+
+size_t simdutf__count_utf8(const char* input, size_t length) {
+  return simdutf::count_utf8(input, length);
+}
+
+size_t simdutf__count_utf16le(const char16_t* input, size_t length) {
+  return simdutf::count_utf16le(input, length);
+}
+
+size_t simdutf__count_utf16be(const char16_t* input, size_t length) {
+  return simdutf::count_utf16be(input, length);
+}
+
+// --- Encoding detection ---
+
+int simdutf__detect_encodings(const char* input, size_t length) {
+  return simdutf::detect_encodings(input, length);
+}
+
+// --- Base64 ---
+
+size_t simdutf__maximal_binary_length_from_base64(const char* input,
+                                                  size_t length) {
+  return simdutf::maximal_binary_length_from_base64(input, length);
+}
+
+simdutf__result simdutf__base64_to_binary(const char* input, size_t length,
+                                          char* output, uint64_t options,
+                                          uint64_t last_chunk_options) {
+  return to_ffi_result(simdutf::base64_to_binary(
+      input, length, output, static_cast<simdutf::base64_options>(options),
+      static_cast<simdutf::last_chunk_handling_options>(last_chunk_options)));
+}
+
+size_t simdutf__base64_length_from_binary(size_t length, uint64_t options) {
+  return simdutf::base64_length_from_binary(
+      length, static_cast<simdutf::base64_options>(options));
+}
+
+size_t simdutf__binary_to_base64(const char* input, size_t length, char* output,
+                                 uint64_t options) {
+  return simdutf::binary_to_base64(
+      input, length, output, static_cast<simdutf::base64_options>(options));
+}
+
+}  // extern "C"
+
+#endif  // RUSTY_V8_ENABLE_SIMDUTF
