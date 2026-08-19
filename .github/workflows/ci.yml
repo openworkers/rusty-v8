@@ -432,10 +432,18 @@ jobs:
           SCCACHE_IDLE_TIMEOUT: 0
         run: ${{ matrix.config.cargo }} build -v --locked --target ${{ matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }} ${{ env.CARGO_FEATURE_FLAGS }}
 
+      # aarch64-linux is cross-compiled on an x86 runner; running its tests
+      # means qemu, which blows the 180-minute budget on free runners.
+      - name: Build (cross-compile, no tests)
+        if: contains(matrix.config.target, 'aarch64-unknown-linux-gnu')
+        env:
+          SCCACHE_IDLE_TIMEOUT: 0
+        run: ${{ matrix.config.cargo }} build -v --locked --target ${{ matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }} ${{ env.CARGO_FEATURE_FLAGS }}
+
       - name: Test
         env:
           SCCACHE_IDLE_TIMEOUT: 0
-        if: (matrix.config.variant == 'debug' || matrix.config.variant == 'release') && !contains(matrix.config.target, 'ios') && !contains(matrix.config.target, '-linux-musl')
+        if: (matrix.config.variant == 'debug' || matrix.config.variant == 'release') && !contains(matrix.config.target, 'ios') && !contains(matrix.config.target, '-linux-musl') && !contains(matrix.config.target, 'aarch64-unknown-linux-gnu')
         run: ${{ matrix.config.cargo }} nextest run -v --cargo-verbose --cargo-verbose --all-targets --locked --target ${{ matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }} ${{ env.CARGO_FEATURE_FLAGS }}
 
       - name: Clippy
