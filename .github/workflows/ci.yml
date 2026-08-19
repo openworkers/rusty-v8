@@ -1,18 +1,19 @@
 name: ci
 
+# A full matrix run is 25 V8 builds, so this fork builds on tags only: its job
+# is publishing the prebuilts upstream skips, not gating every push.
 on:
   push:
-    branches: [main]
     tags: ["**"]
   pull_request:
     branches: [main]
-    types: [labeled, opened, synchronize, reopened]
+  workflow_dispatch:
 
 permissions: write-all
 
 jobs:
   build:
-    name: ${{ matrix.config.variant }} ${{ matrix.config.target }} ${{ matrix.config.v8_enable_pointer_compression && 'ptrcomp' || '' }}
+    name: ${{ matrix.config.variant }} ${{ matrix.config.target }} ${{ matrix.config.v8_enable_sandbox && 'sandbox' || matrix.config.v8_enable_pointer_compression && 'ptrcomp' || '' }}
     runs-on: ${{ matrix.config.os }}
     timeout-minutes: 180
     strategy:
@@ -37,18 +38,6 @@ jobs:
             target: x86_64-apple-darwin
             variant: release
             v8_enable_pointer_compression: false
-            cargo: cargo
-
-          - os: macos-15-large
-            target: x86_64-apple-darwin
-            variant: debug
-            v8_enable_pointer_compression: true
-            cargo: cargo
-
-          - os: macos-15-large
-            target: x86_64-apple-darwin
-            variant: release
-            v8_enable_pointer_compression: true
             cargo: cargo
 
           - os: macos-15
@@ -77,20 +66,6 @@ jobs:
 
           # iOS: built from source. The simulator keeps the JIT; the device
           # build is jitless (no JIT entitlement on device) -- see build.rs.
-          # Cross-compiled, so the test suite is not run on the runner.
-          # WebAssembly is disabled (Torque can't build it jitless).
-          - os: macos-15
-            target: aarch64-apple-ios-sim
-            variant: release
-            v8_enable_pointer_compression: false
-            cargo: cargo
-
-          - os: macos-15
-            target: aarch64-apple-ios
-            variant: release
-            v8_enable_pointer_compression: false
-            cargo: cargo
-
           - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
             target: x86_64-unknown-linux-gnu
             variant: debug
@@ -166,6 +141,61 @@ jobs:
             v8_enable_pointer_compression: false
             cargo: cargo
 
+          # The prebuilts upstream does not publish. Debug is built too, or a
+          # developer on these targets has to build V8 from source.
+          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+            target: aarch64-unknown-linux-gnu
+            variant: debug
+            v8_enable_pointer_compression: true
+            cargo: cargo
+
+          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+            target: aarch64-unknown-linux-gnu
+            variant: release
+            v8_enable_pointer_compression: true
+            cargo: cargo
+
+          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+            target: aarch64-unknown-linux-gnu
+            variant: debug
+            v8_enable_pointer_compression: true
+            v8_enable_sandbox: true
+            cargo: cargo
+
+          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+            target: aarch64-unknown-linux-gnu
+            variant: release
+            v8_enable_pointer_compression: true
+            v8_enable_sandbox: true
+            cargo: cargo
+
+          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+            target: x86_64-unknown-linux-gnu
+            variant: debug
+            v8_enable_pointer_compression: true
+            v8_enable_sandbox: true
+            cargo: cargo
+
+          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+            target: x86_64-unknown-linux-gnu
+            variant: release
+            v8_enable_pointer_compression: true
+            v8_enable_sandbox: true
+            cargo: cargo
+
+          - os: macos-15
+            target: aarch64-apple-darwin
+            variant: debug
+            v8_enable_pointer_compression: true
+            v8_enable_sandbox: true
+            cargo: cargo
+
+          - os: macos-15
+            target: aarch64-apple-darwin
+            variant: release
+            v8_enable_pointer_compression: true
+            v8_enable_sandbox: true
+            cargo: cargo
 
 
 
@@ -180,10 +210,12 @@ jobs:
     env:
       V8_FROM_SOURCE: true
       CARGO_VARIANT_FLAG: ${{ matrix.config.variant == 'release' && '--release' || '' }}
-      CARGO_FEATURE_FLAGS: ${{ matrix.config.v8_enable_pointer_compression && '--features v8_enable_pointer_compression' || '' }}
+      CARGO_FEATURE_FLAGS: ${{ matrix.config.v8_enable_sandbox && '--features v8_enable_sandbox' || matrix.config.v8_enable_pointer_compression && '--features v8_enable_pointer_compression' || '' }}
       LIB_NAME: ${{ contains(matrix.config.target, 'windows') && 'rusty_v8' || 'librusty_v8' }}
       LIB_EXT: ${{ contains(matrix.config.target, 'windows') && 'lib' || 'a' }}
-      FEATURES_SUFFIX: ${{ matrix.config.v8_enable_pointer_compression && '_ptrcomp' || '' }}
+      # The sandbox feature turns pointer compression on, so build.rs looks for
+      # both suffixes.
+      FEATURES_SUFFIX: ${{ matrix.config.v8_enable_sandbox && '_ptrcomp_sandbox' || matrix.config.v8_enable_pointer_compression && '_ptrcomp' || '' }}
       RUSTFLAGS: -D warnings
 
     steps:
@@ -323,8 +355,8 @@ jobs:
             target/*/.*
             target/*/build
             target/*/deps
-          key: cargo1-${{ matrix.config.target }}-${{ matrix.config.variant }}-${{ matrix.config.v8_enable_pointer_compression }}-${{ hashFiles('Cargo.lock', 'build.rs', 'git_submodule_status.txt') }}
-          restore-keys: cargo1-${{ matrix.config.target }}-${{ matrix.config.variant }}-${{ matrix.config.v8_enable_pointer_compression }}-
+          key: cargo1-${{ matrix.config.target }}-${{ matrix.config.variant }}-${{ matrix.config.v8_enable_sandbox && 'sandbox' || matrix.config.v8_enable_pointer_compression }}-${{ hashFiles('Cargo.lock', 'build.rs', 'git_submodule_status.txt') }}
+          restore-keys: cargo1-${{ matrix.config.target }}-${{ matrix.config.variant }}-${{ matrix.config.v8_enable_sandbox && 'sandbox' || matrix.config.v8_enable_pointer_compression }}-
 
       - name: Install and start sccache
         shell: pwsh
@@ -422,7 +454,7 @@ jobs:
       - name: Binary publish
         uses: softprops/action-gh-release@v0.1.15
         if: >-
-          github.repository == 'denoland/rusty_v8' &&
+          github.repository == 'openworkers/rusty-v8' &&
           startsWith(github.ref, 'refs/tags/') &&
           (matrix.config.variant == 'debug' || matrix.config.variant == 'release')
         env:
