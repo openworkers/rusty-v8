@@ -1680,6 +1680,16 @@ fn copy_archive_to(url: &str, dst_path: &Path) -> Result<(), String> {
 
 fn print_link_flags() {
   println!("cargo:rustc-link-lib=static=rusty_v8");
+
+  // partition_alloc's UseMapJit() calls into both frameworks, and the sandbox
+  // is the only configuration that links it in.
+  if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos")
+    && env::var("CARGO_FEATURE_V8_ENABLE_SANDBOX").is_ok()
+  {
+    println!("cargo:rustc-link-lib=framework=CoreFoundation");
+    println!("cargo:rustc-link-lib=framework=Security");
+  }
+
   let should_dyn_link_libcxx = env::var("CARGO_FEATURE_USE_CUSTOM_LIBCXX")
     .is_err()
     || env::var("GN_ARGS").is_ok_and(|gn_args| {
