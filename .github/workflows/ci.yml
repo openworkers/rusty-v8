@@ -15,7 +15,10 @@ jobs:
   build:
     name: ${{ matrix.config.variant }} ${{ matrix.config.target }} ${{ matrix.config.v8_enable_sandbox && 'sandbox' || matrix.config.v8_enable_pointer_compression && 'ptrcomp' || '' }}
     runs-on: ${{ matrix.config.os }}
-    timeout-minutes: 180
+    # The aarch64-linux cross builds swing between 20min and 3h+ depending on
+    # how much of the sccache working set survived eviction; 180 sits inside
+    # that variance and killed finished-in-all-but-name jobs twice.
+    timeout-minutes: 360
     strategy:
       # Always run main branch builds to completion. This allows the cache to
       # stay mostly up-to-date in situations where a single job fails due to
@@ -362,7 +365,11 @@ jobs:
         shell: pwsh
         env:
           SCCACHE_DIR: ${{ github.workspace }}/target/sccache
-          SCCACHE_CACHE_SIZE: 256M
+          # gn_out is not cached (see above), so sccache is the only thing
+          # standing between a 20min and a 3h+ build. A debug object set does
+          # not fit in 256M; 1G for the slow cross targets stays within the
+          # repository's 10G cache quota.
+          SCCACHE_CACHE_SIZE: ${{ contains(matrix.config.target, 'aarch64-unknown-linux-gnu') && '1G' || '256M' }}
           SCCACHE_IDLE_TIMEOUT: 0
         run: |
           $version = "v0.8.2"
