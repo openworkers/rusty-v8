@@ -797,7 +797,7 @@ fn static_lib_name(suffix: &str) -> String {
 }
 
 const DEFAULT_ARTIFACT_BASE: &str =
-  "https://github.com/denoland/rusty_v8/releases/download";
+  "https://github.com/openworkers/rusty-v8/releases/download";
 
 /// Values substituted into artifact URLs and URL templates.
 struct UrlVars<'a> {
