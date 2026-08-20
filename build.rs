@@ -507,6 +507,12 @@ fn build_v8(is_asan: bool) {
       gn_args.push("use_sysroot=true".to_string());
       maybe_install_sysroot("arm64");
       maybe_install_sysroot("amd64");
+
+      // Here the compression cage lands outside every partition_alloc pool, so
+      // GetPoolInfo() hits PA_NOTREACHED.
+      if env::var("CARGO_FEATURE_V8_ENABLE_POINTER_COMPRESSION").is_ok() {
+        gn_args.push("v8_enable_partition_alloc=false".to_string());
+      }
     }
   }
   if target_arch == "arm" {
