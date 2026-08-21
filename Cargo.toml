@@ -1,12 +1,12 @@
 [package]
-name = "v8"
+name = "openworkers-v8"
 version = "152.2.0"
-description = "Rust bindings to V8"
+description = "Rust bindings to V8, with prebuilt pointer-compression and sandbox binaries"
 readme = "README.md"
-authors = ["the Deno authors"]
+authors = ["the Deno authors", "OpenWorkers Authors <contact@openworkers.dev>"]
 license = "MIT"
 edition = "2024"
-repository = "https://github.com/denoland/rusty_v8"
+repository = "https://github.com/openworkers/rusty-v8"
 exclude = [
   # To keep the package under the 10mb limit imposed by crates.io we exclude
   # a lot of files that are not needed for the build.
@@ -93,6 +93,11 @@ exclude = [
   "!v8/tools/testrunner/utils/dump_build_config.py",
 ]
 
+# The package publishes as openworkers-v8; the library keeps the v8 name so
+# `use v8::...` works unchanged via `package = "openworkers-v8"` renames.
+[lib]
+name = "v8"
+
 [profile.dev]
 # rusty_v8 may miscompile at opt-level=0.
 # https://github.com/rust-lang/rust/issues/87215
@@ -165,4 +170,5 @@ path = "benches/string_encode.rs"
 harness = false
 
 [workspace]
-members = ["examples/android"]
+# The android example depends on the package under its upstream "v8" name.
+members = []
