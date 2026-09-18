@@ -8,6 +8,11 @@
 /target/
 /.cipd/
 
+# Bindings that build.rs downloads and the publish job stages; only the
+# directory itself is tracked.
+/gen/*
+!/gen/.gitkeep
+
 third_party/android_ndk
 third_party/android_platform
 third_party/catapult
